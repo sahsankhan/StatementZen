@@ -1,0 +1,93 @@
+# name: Run Cypress Tests
+
+# on:
+#   push:
+#     branches:
+#       - master
+
+# jobs:
+#   test:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#     - name: Checkout the repository
+#       uses: actions/checkout@v4
+
+#     - name: Set up Node.js
+#       uses: actions/setup-node@v4
+#       with:
+#         node-version: '18'
+
+#     - name: Install dependencies
+#       run: |
+#         npm ci
+
+#     - name: Verify Allure CLI
+#       run: |
+#         npx allure --version || echo "Allure CLI not found"
+
+#     - name: Clean Allure Results
+#       run: |
+#         npm run allure:clean
+
+#     - name: Set permissions for Allure results
+#       run: |
+#         mkdir -p allure-results
+#         chmod -R 777 allure-results
+
+#     - name: Debug Allure Results Before Cypress
+#       run: |
+#         ls -la allure-results || echo "allure-results directory not found before Cypress run"
+
+#     - name: Run Cypress tests (Feature files only)
+#       run: |
+#         export TERM=xterm
+#         npx cypress run --browser chrome --headless --config video=false --env retries=2,allure=true
+#       env:
+#         CYPRESS_validEmail: ${{ secrets.CYPRESS_VALID_EMAIL }}
+#         CYPRESS_validPassword: ${{ secrets.CYPRESS_VALID_PASSWORD }}
+#         SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+#         SLACK_USER_ID: ${{ secrets.SLACK_USER_ID }}
+
+#     - name: Debug Allure Results After Cypress
+#       if: always()
+#       run: |
+#         ls -la allure-results || echo "allure-results directory not found after Cypress run"
+#         cat allure-results/*.json || echo "No JSON files found in allure-results"
+
+#     - name: Generate Allure Report
+#       if: always()
+#       run: |
+#         npm run allure:generate
+#       env:
+#         ALLURE_RESULTS_DIR: allure-results
+
+#     - name: Debug Allure Report
+#       if: always()
+#       run: |
+#         ls -la allure-report.html || echo "allure-report.html file not found"
+
+#     - name: Upload Allure Report as Artifact
+#       if: always()
+#       uses: actions/upload-artifact@v4
+#       with:
+#         name: allure-report
+#         path: allure-report.html
+#         retention-days: 7
+
+#     - name: Upload screenshots on failure
+#       if: failure()
+#       uses: actions/upload-artifact@v4
+#       with:
+#         name: cypress-screenshots
+#         path: cypress/screenshots/
+#         retention-days: 7
+
+#     - name: Display test result
+#       if: always()
+#       run: |
+#         if [ ${{ job.status }} == "success" ]; then
+#           echo "Cypress tests passed"
+#         else
+#           echo "Cypress tests failed, but continuing to generate and upload Allure report"
+#         fi

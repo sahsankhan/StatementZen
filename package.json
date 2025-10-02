@@ -1,0 +1,34 @@
+{
+  "name": "cypress-bdd-framework",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "npm run allure:clean && npx cypress run --e2e --env allure=true",
+    "allure:generate": "npx allure generate allure-results --clean --single-file -o allure-report.html",
+    "allure:open": "npx allure open allure-report.html",
+    "allure:clean": "rimraf allure-results allure-report.html"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@badeball/cypress-cucumber-preprocessor": "^22.2.0",
+    "@bahmutov/cypress-esbuild-preprocessor": "^2.2.5",
+    "@shelex/cypress-allure-plugin": "^2.41.2",
+    "@slack/web-api": "^7.9.3",
+    "allure-commandline": "^2.34.1",
+    "allure-js-commons": "^2.1.0",
+    "cypress": "^14.5.4",
+    "cypress-file-upload": "^5.0.8",
+    "cypress-xpath": "^2.0.1",
+    "dotenv": "^17.2.3",
+    "esbuild": "^0.25.5",
+    "rimraf": "^5.0.7"
+  },
+  "dependencies": {
+    "googleapis": "^160.0.0",
+    "html-to-text": "^9.0.5",
+    "open": "^10.2.0"
+  }
+}
