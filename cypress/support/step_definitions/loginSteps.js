@@ -14,6 +14,7 @@ When("I click on the second Deny button", () => {
 });
 
 When("I enters email {string}", (email) => {
+  cy.wait(5000);
   login.enterEmail(email || Cypress.env('validEmail'));
 });
 

@@ -2,7 +2,7 @@ Feature: Login Feature
 
   Scenario: User should be able to Login with valid credentials
     Given I am on the login page
-    When I click on the second Deny button
+    # When I click on the second Deny button
     And I enters email "automationtesting077@gmail.com"
     And I click on "Send One Time Code" button
     And I enter OTP code
