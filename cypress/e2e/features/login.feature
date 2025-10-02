@@ -8,7 +8,7 @@ Feature: Login Feature
     And I click on "Verify One Time Code" button
     Then I should see "My Account" heading
 
-  Scenario: User should be able to Login with invalid OTP code
+  Scenario: User should not be able to Login with invalid OTP code
     Given I am on the login page
     And I enters email "automationtesting077@gmail.com"
     And I click on "Send One Time Code" button
