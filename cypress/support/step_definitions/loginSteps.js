@@ -9,9 +9,10 @@ Given("I am on the login page", () => {
   login.getSignInHeader().should("be.visible");
 });
 
-When("I click on the second Deny button", () => {
-  login.getDenyButton().click();
-});
+// This step needs to be enabled to close Cookies Modal
+// When("I click on the second Deny button", () => {
+//   login.getDenyButton().click();
+// });
 
 When("I enters email {string}", (email) => {
   cy.wait(5000);
