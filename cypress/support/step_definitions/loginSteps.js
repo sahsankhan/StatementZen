@@ -22,7 +22,7 @@ When("I enters email {string}", (email) => {
 
 When("I click on {string} button", (buttonText) => {
   login.getButtonByText(buttonText).click();
-  cy.wait(5000);
+  cy.wait(15000);
 });
 
 When("I enter OTP code", () => {

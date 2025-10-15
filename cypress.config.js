@@ -119,17 +119,17 @@
 // });
 
 
-require('dotenv').config();
-const { defineConfig } = require("cypress");
-const createBundler = require("@bahmutov/cypress-esbuild-preprocessor");
-const { addCucumberPreprocessorPlugin } = require("@badeball/cypress-cucumber-preprocessor");
-const { createEsbuildPlugin } = require("@badeball/cypress-cucumber-preprocessor/esbuild");
-const allureWriter = require('@shelex/cypress-allure-plugin/writer');
-const { getLatestOtp } = require("./gmail");
+import 'dotenv/config';
+import { defineConfig } from "cypress";
+import createBundler from "@bahmutov/cypress-esbuild-preprocessor";
+import { addCucumberPreprocessorPlugin } from "@badeball/cypress-cucumber-preprocessor";
+import { createEsbuildPlugin } from "@badeball/cypress-cucumber-preprocessor/esbuild";
+import allureWriter from '@shelex/cypress-allure-plugin/writer';
+// import { getLatestOtp } from "./gmail.js"; // Commented out for MCP automation
 
-module.exports = defineConfig({
+export default defineConfig({
   e2e: {
-    specPattern: "cypress/e2e/**/*.feature",
+    specPattern: "cypress/e2e/**/*.{feature,cy.js}",
     async setupNodeEvents(on, config) {
       await addCucumberPreprocessorPlugin(on, config);
       on("file:preprocessor", createBundler({
@@ -138,17 +138,18 @@ module.exports = defineConfig({
       allureWriter(on, config);
 
       on("task", {
-        async getOtpFromGmail() {
-          return await getLatestOtp({ timeout: 60000 });
-        },
+        // async getOtpFromGmail() {
+        //   return await getLatestOtp({ timeout: 60000 });
+        // },
         logAllure(message) {
           console.log("Allure Task Log:", message);
           return null;
         },
-        allureResultsGenerated() {
+        async allureResultsGenerated() {
           console.log("Allure results generated in:", process.cwd() + '/allure-results');
           try {
-            const files = require('fs').readdirSync('allure-results');
+            const fs = await import('fs');
+            const files = fs.readdirSync('allure-results');
             console.log("Allure files:", files);
           } catch (error) {
             console.error("Error reading allure-results directory:", error);

@@ -1,12 +1,14 @@
 {
   "name": "cypress-bdd-framework",
   "version": "1.0.0",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "test": "npm run allure:clean && npx cypress run --e2e --env allure=true",
-    "allure:generate": "npx allure generate allure-results --clean --single-file -o allure-report.html",
-    "allure:open": "npx allure open allure-report.html",
-    "allure:clean": "rimraf allure-results allure-report.html"
+    "mcp": "node ./cypress-mcp.js",
+    "allure:generate": "npx allure generate allure-results --clean -o allure-report",
+    "allure:open": "npx allure open allure-report",
+    "allure:clean": "rimraf allure-results allure-report"
   },
   "keywords": [],
   "author": "",
@@ -27,8 +29,10 @@
     "rimraf": "^5.0.7"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.19.1",
     "googleapis": "^160.0.0",
     "html-to-text": "^9.0.5",
-    "open": "^10.2.0"
+    "open": "^10.2.0",
+    "zod": "^4.1.12"
   }
 }
