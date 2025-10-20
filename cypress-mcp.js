@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -14,6 +14,60 @@ async function runCommand(cmd) {
   } catch (error) {
     return { content: [{ type: "text", text: error.message }] };
   }
+}
+
+// Helper to run Cypress with better process handling (fixes Chrome headed mode error)
+async function runCypressCommand(spec, browser = 'chrome', headed = true, extraArgs = []) {
+  return new Promise(async (resolve, reject) => {
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    
+    // Use npx with cwd set to project root - this will use local Cypress from package.json
+    const args = ['cypress', 'run', '--browser', browser, ...extraArgs];
+    if (spec) {
+      args.push('--spec', spec);
+    }
+    if (headed) {
+      args.push('--headed');
+    }
+    
+    const cypressProcess = spawn('npx', args, {
+      shell: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: __dirname
+    });
+    
+    let stdout = '';
+    let stderr = '';
+    
+    cypressProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    cypressProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    cypressProcess.on('close', (code) => {
+      // Cypress exit codes: 0 = success, non-zero = failure
+      if (code === 0) {
+        resolve({ stdout, stderr, code: 0 });
+      } else {
+        // Check if tests passed by looking at output
+        if (stdout.includes('All specs passed!') || stdout.includes('passing')) {
+          resolve({ stdout, stderr, code: 0 });
+        } else {
+          reject({ stdout, stderr, code, message: `Cypress exited with code ${code}` });
+        }
+      }
+    });
+    
+    cypressProcess.on('error', (error) => {
+      reject({ stdout, stderr, code: -1, message: error.message });
+    });
+  });
 }
 
 // Helper functions for BDD automation
@@ -139,8 +193,45 @@ server.registerTool(
 registeredTools.push("run-tests");
 server.registerTool(
   "run-tests",
-  { title: "Run Tests", description: "Run Cypress BDD tests in headless Chrome" },
-  async () => await runCommand("npx cypress run --browser chrome")
+  { title: "Run Tests", description: "Scan features, generate temp spec, run in Electron headless" },
+  async () => {
+    try {
+      const path = await import('path');
+      const fs = await import('fs');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const featuresDir = path.join(__dirname, 'cypress/e2e/features');
+
+      const files = fs.readdirSync(featuresDir).filter(f => f.endsWith('.feature'));
+      if (files.length === 0) {
+        return { content: [{ type: 'text', text: `No .feature files found in ${featuresDir}` }] };
+      }
+
+      const selectedFile = files.includes('test.feature') ? 'test.feature' : files[0];
+      const featurePath = path.join(featuresDir, selectedFile);
+      const featureContent = fs.readFileSync(featurePath, 'utf8');
+      const steps = parseFeatureSteps(featureContent);
+      if (steps.length === 0) {
+        return { content: [{ type: 'text', text: `No BDD steps found in ${selectedFile}` }] };
+      }
+
+      const automationScript = generateDirectAutomationScript(steps);
+      const tempScriptPath = path.join(__dirname, 'cypress/e2e/run_tests_temp.cy.js');
+      fs.writeFileSync(tempScriptPath, automationScript);
+
+      const result = await runCypressCommand(tempScriptPath, 'electron', false)
+        .then(({ stdout, stderr }) => ({ content: [{ type: 'text', text: `✅ Cypress (Electron headless) run completed.\nFeature File: ${selectedFile}\nAvailable Files: ${files.join(', ')}\n\n=== Output ===\n${stdout}\n${stderr ? `\nStderr:\n${stderr}` : ''}` }] }))
+        .catch(error => ({ content: [{ type: 'text', text: `❌ Cypress run failed.\nFeature File: ${selectedFile}\nAvailable Files: ${files.join(', ')}\n\nMessage: ${error.message}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}\n\nTemp file: ${tempScriptPath}` }] }));
+
+      if (result.content[0].text.startsWith('✅')) {
+        try { fs.unlinkSync(tempScriptPath); } catch {}
+      }
+      return result;
+    } catch (e) {
+      return { content: [{ type: 'text', text: `❌ run-tests error: ${e.message}` }] };
+    }
+  }
 );
 
 registeredTools.push("open-tests");
@@ -150,18 +241,18 @@ server.registerTool(
   async () => await runCommand("npx cypress open")
 );
 
-registeredTools.push("generate-report");
-server.registerTool(
-  "generate-report",
-  { title: "Generate Report", description: "Generate Mochawesome report" },
-  async () => await runCommand("npx mochawesome-merge ./cypress/results/*.json > report.json && npx marge report.json")
-);
-
 registeredTools.push("run-smoke-tests");
 server.registerTool(
   "run-smoke-tests",
-  { title: "Run Smoke Tests", description: "Run tests tagged with @smoke" },
-  async () => await runCommand("npx cypress run --env grep=@smoke")
+  { title: "Run Smoke Tests", description: "Run tests tagged with @smoke using stable runner" },
+  async () => {
+    try {
+      const { stdout, stderr } = await runCypressCommand(undefined, 'chrome', true, ['--env','grep=@smoke']);
+      return { content: [{ type: 'text', text: `✅ Smoke run completed.\n${stdout}\n${stderr ? `\nStderr:\n${stderr}` : ''}` }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `❌ Smoke run failed.\nMessage: ${error.message}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}` }] };
+    }
+  }
 );
 
 // New BDD automation tools
@@ -170,24 +261,52 @@ server.registerTool(
   "automate-feature",
   { 
     title: "Automate Feature File", 
-    description: "Automatically execute feature file without step definitions using dynamic automation",
-    inputSchema: {
-      type: "object",
-      properties: {
-        featurePath: {
-          type: "string",
-          description: "Path to the feature file to automate"
-        },
-        headless: {
-          type: "boolean",
-          description: "Run in headless mode",
-          default: false
-        }
-      },
-      required: ["featurePath"]
-    }
+    description: "Automatically execute feature file without step definitions. If called without parameters, scans and executes test.feature. Parameters: featurePath (string, optional), headless (boolean, optional)"
   },
-  async ({ featurePath, headless = false }) => {
+  async (args) => {
+    console.error('[automate-feature] Received args:', JSON.stringify(args));
+    
+    let { featurePath, headless = false } = args || {};
+    let selectedFile = null;
+    let availableFiles = [];
+    
+    // If no featurePath provided, scan and auto-select
+    if (!featurePath) {
+      console.error('[automate-feature] No featurePath provided, scanning features folder...');
+      
+      try {
+        const path = await import('path');
+        const { fileURLToPath } = await import('url');
+        const __filename = fileURLToPath(import.meta.url);
+        const __dirname = path.dirname(__filename);
+        const featuresDir = path.join(__dirname, 'cypress/e2e/features');
+        
+        const fs = await import('fs');
+        availableFiles = fs.readdirSync(featuresDir).filter(file => file.endsWith('.feature'));
+        
+        if (availableFiles.length === 0) {
+          return { 
+            content: [{ 
+              type: "text", 
+              text: `No .feature files found in ${featuresDir}` 
+            }] 
+          };
+        }
+        
+        selectedFile = availableFiles.includes('test.feature') ? 'test.feature' : availableFiles[0];
+        featurePath = path.join(featuresDir, selectedFile);
+        console.error(`[automate-feature] Auto-selected: ${selectedFile} from ${availableFiles.join(', ')}`);
+        
+      } catch (error) {
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `Error scanning features folder: ${error.message}` 
+          }] 
+        };
+      }
+    }
+    
     const featureContent = await import('fs').then(fs => 
       fs.readFileSync(featurePath, 'utf8')
     );
@@ -196,21 +315,33 @@ server.registerTool(
     const steps = parseFeatureSteps(featureContent);
     const automationScript = generateAutomationScript(steps);
     
-    // Write temporary automation script
-    const tempScriptPath = `cypress/e2e/temp_automation.cy.js`;
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const tempScriptPath = path.join(__dirname, 'cypress/e2e/temp_automation.cy.js');
+    
     await import('fs').then(fs => 
       fs.writeFileSync(tempScriptPath, automationScript)
     );
     
     // Run the automation
-    const headlessFlag = headless ? '--headless' : '';
-    const result = await runCommand(`npx cypress run --spec "${tempScriptPath}" ${headlessFlag}`);
+    const featureInfo = selectedFile ? `\nFeature File: ${selectedFile}\nAvailable Files: ${availableFiles.join(', ')}\n` : '';
+    const result = await runCypressCommand(tempScriptPath, 'chrome', !headless)
+      .then(({ stdout, stderr }) => ({ 
+        content: [{ type: "text", text: `✅ Test execution completed!${featureInfo}\nGenerated script:\n${automationScript}\n\n=== Test Output ===\n${stdout}\n${stderr ? '\nStderr:\n' + stderr : ''}` }] 
+      }))
+      .catch(error => ({ 
+        content: [{ type: "text", text: `❌ Test execution failed!${featureInfo}\nGenerated script:\n${automationScript}\n\n=== Error Details ===\nMessage: ${error.message}\nCode: ${error.code}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}\n\nTemp file location: ${tempScriptPath} (not deleted for debugging)` }] 
+      }));
     
     // Clean up temp file
-    try {
-      await import('fs').then(fs => fs.unlinkSync(tempScriptPath));
-    } catch (e) {
-      console.log('Temp file cleanup failed:', e.message);
+    if (result.content[0].text.includes('✅')) {
+      try {
+        await import('fs').then(fs => fs.unlinkSync(tempScriptPath));
+      } catch (e) {
+        console.log('Temp file cleanup failed:', e.message);
+      }
     }
     
     return result;
@@ -222,40 +353,207 @@ server.registerTool(
   "parse-and-execute",
   { 
     title: "Parse and Execute BDD", 
-    description: "Parse BDD steps and execute them dynamically without step definitions",
-    inputSchema: {
-      type: "object",
-      properties: {
-        steps: {
-          type: "array",
-          description: "Array of BDD steps to execute",
-          items: { type: "string" }
-        },
-        baseUrl: {
-          type: "string",
-          description: "Base URL for the application"
-        }
-      },
-      required: ["steps"]
-    }
+    description: "Parse BDD steps and execute them dynamically without step definitions. If called without parameters, automatically reads from test.feature. Parameters: steps (array of strings, optional), baseUrl (optional string)"
   },
-  async ({ steps, baseUrl }) => {
+  async (args) => {
+    console.error('[parse-and-execute] Received args:', JSON.stringify(args));
+    console.error('[parse-and-execute] Args type:', typeof args);
+    console.error('[parse-and-execute] Args keys:', args ? Object.keys(args) : 'null/undefined');
+    
+    let { steps, baseUrl } = args || {};
+    let selectedFile = null;
+    let availableFiles = [];
+    
+    // If no steps provided, scan and read from feature files
+    if (!steps || !Array.isArray(steps) || steps.length === 0) {
+      console.error('[parse-and-execute] No steps provided, scanning for feature files...');
+      
+      try {
+        const path = await import('path');
+        const { fileURLToPath } = await import('url');
+        const __filename = fileURLToPath(import.meta.url);
+        const __dirname = path.dirname(__filename);
+        const featuresDir = path.join(__dirname, 'cypress/e2e/features');
+        
+        const fs = await import('fs');
+        
+        // Scan for all .feature files
+        availableFiles = fs.readdirSync(featuresDir).filter(file => file.endsWith('.feature'));
+        
+        if (availableFiles.length === 0) {
+          return { 
+            content: [{ 
+              type: "text", 
+              text: `No .feature files found in ${featuresDir}` 
+            }] 
+          };
+        }
+        
+        console.error('[parse-and-execute] Found feature files:', availableFiles);
+        
+        // Use the first feature file found (or test.feature if it exists)
+        selectedFile = availableFiles.includes('test.feature') ? 'test.feature' : availableFiles[0];
+        const featurePath = path.join(featuresDir, selectedFile);
+        
+        const featureContent = fs.readFileSync(featurePath, 'utf8');
+        steps = parseFeatureSteps(featureContent);
+        
+        if (steps.length === 0) {
+          return { 
+            content: [{ 
+              type: "text", 
+              text: `No BDD steps found in ${selectedFile}. Available files: ${availableFiles.join(', ')}. Please ensure the file has Given/When/Then/And steps.` 
+            }] 
+          };
+        }
+        
+        console.error(`[parse-and-execute] Using ${selectedFile}, extracted steps:`, steps);
+      } catch (error) {
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `Error scanning feature files: ${error.message}. You can also pass steps directly as parameter.` 
+          }] 
+        };
+      }
+    }
+    
     const automationScript = generateDirectAutomationScript(steps, baseUrl);
-    const tempScriptPath = `cypress/e2e/direct_automation.cy.js`;
     
-    await import('fs').then(fs => 
-      fs.writeFileSync(tempScriptPath, automationScript)
-    );
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const tempScriptPath = path.join(__dirname, 'cypress/e2e/direct_automation.cy.js');
     
-    const result = await runCommand(`npx cypress run --spec "${tempScriptPath}"`);
+    console.error('[parse-and-execute] Generated script:\n', automationScript);
+    console.error('[parse-and-execute] Temp script path:', tempScriptPath);
     
-    try {
-      await import('fs').then(fs => fs.unlinkSync(tempScriptPath));
-    } catch (e) {
-      console.log('Temp file cleanup failed:', e.message);
+    const fs = await import('fs');
+    fs.writeFileSync(tempScriptPath, automationScript);
+    console.error('[parse-and-execute] Temp file written successfully');
+    
+    // Run the automation from the project root directory
+    console.error('[parse-and-execute] Running command from:', __dirname);
+    const featureInfo = selectedFile ? `\nFeature File: ${selectedFile}\nAvailable Files: ${availableFiles.join(', ')}\n` : '';
+    
+    const result = await runCypressCommand(tempScriptPath, 'chrome', true)
+      .then(({ stdout, stderr }) => ({ 
+        content: [{ type: "text", text: `✅ Test execution completed!${featureInfo}\nGenerated script:\n${automationScript}\n\n=== Test Output ===\n${stdout}\n${stderr ? '\nStderr:\n' + stderr : ''}` }] 
+      }))
+      .catch(error => ({ 
+        content: [{ type: "text", text: `❌ Test execution failed!${featureInfo}\nGenerated script:\n${automationScript}\n\n=== Error Details ===\nMessage: ${error.message}\nCode: ${error.code}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}\n\nTemp file location: ${tempScriptPath} (not deleted for debugging)` }] 
+      }));
+    
+    // Clean up temp file only on success
+    if (result.content[0].text.includes('✅')) {
+      try {
+        fs.unlinkSync(tempScriptPath);
+        console.error('[parse-and-execute] Temp file cleaned up');
+      } catch (e) {
+        console.error('Temp file cleanup failed:', e.message);
+      }
     }
     
     return result;
+  }
+);
+
+// Special tool to run feature files automatically without parameters
+registeredTools.push("automate-test-feature");
+server.registerTool(
+  "automate-test-feature",
+  { 
+    title: "Automate Feature Files", 
+    description: "Automatically scans and executes feature files from cypress/e2e/features/ without step definitions. Prioritizes test.feature if found."
+  },
+  async () => {
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const featuresDir = path.join(__dirname, 'cypress/e2e/features');
+    
+    console.error('[automate-test-feature] Scanning features directory:', featuresDir);
+    
+    try {
+      const fs = await import('fs');
+      
+      // Scan for all .feature files
+      const files = fs.readdirSync(featuresDir).filter(file => file.endsWith('.feature'));
+      
+      if (files.length === 0) {
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `No .feature files found in ${featuresDir}` 
+          }] 
+        };
+      }
+      
+      console.error('[automate-test-feature] Found feature files:', files);
+      
+      // Use test.feature if it exists, otherwise use the first file found
+      let selectedFile = files.includes('test.feature') ? 'test.feature' : files[0];
+      const featurePath = path.join(featuresDir, selectedFile);
+      
+      console.error('[automate-test-feature] Selected file:', selectedFile);
+      console.error('[automate-test-feature] Full path:', featurePath);
+      
+      const featureContent = fs.readFileSync(featurePath, 'utf8');
+      
+      // Parse feature file and extract steps
+      const steps = parseFeatureSteps(featureContent);
+      
+      if (steps.length === 0) {
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `No BDD steps found in ${selectedFile}. Available feature files: ${files.join(', ')}` 
+          }] 
+        };
+      }
+      
+      // Generate automation script
+      const automationScript = generateDirectAutomationScript(steps);
+      const tempScriptPath = path.join(__dirname, 'cypress/e2e/temp_test_feature_automation.cy.js');
+      
+      console.error('[automate-test-feature] Temp script path:', tempScriptPath);
+      console.error('[automate-test-feature] Steps found:', steps);
+      console.error('[automate-test-feature] Generated script:\n', automationScript);
+      
+      fs.writeFileSync(tempScriptPath, automationScript);
+      console.error('[automate-test-feature] Temp file written successfully');
+      
+      // Run the automation from the project root directory
+      console.error('[automate-test-feature] Running command from:', __dirname);
+      const result = await runCypressCommand(tempScriptPath, 'chrome', true)
+        .then(({ stdout, stderr }) => ({ 
+          content: [{ type: "text", text: `✅ Test execution completed!\n\nFeature File: ${selectedFile}\nAvailable Files: ${files.join(', ')}\n\nGenerated script:\n${automationScript}\n\n=== Test Output ===\n${stdout}\n${stderr ? '\nStderr:\n' + stderr : ''}` }] 
+        }))
+        .catch(error => ({ 
+          content: [{ type: "text", text: `❌ Test execution failed!\n\nFeature File: ${selectedFile}\nAvailable Files: ${files.join(', ')}\n\nGenerated script:\n${automationScript}\n\n=== Error Details ===\nMessage: ${error.message}\nCode: ${error.code}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}\n\nTemp file location: ${tempScriptPath} (not deleted for debugging)` }] 
+        }));
+      
+      // Clean up temp file only on success
+      if (result.content[0].text.includes('✅')) {
+        try {
+          fs.unlinkSync(tempScriptPath);
+          console.error('[automate-test-feature] Temp file cleaned up');
+        } catch (e) {
+          console.error('Temp file cleanup failed:', e.message);
+        }
+      }
+      
+      return result;
+    } catch (error) {
+      return { 
+        content: [{ 
+          type: "text", 
+          text: `Error: ${error.message}` 
+        }] 
+      };
+    }
   }
 );
 
@@ -336,38 +634,51 @@ server.registerTool(
   "generate-step-definitions",
   {
     title: "Generate Step Definitions from Feature",
-    description: "Reads a .feature file and generates a step definitions file.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        featurePath: { type: "string", description: "Path to the feature file" },
-        outDir: { type: "string", description: "Output directory for step defs", default: "cypress/support/step_definitions" },
-        pageObjectPath: { type: "string", description: "Import path for page object", default: "../pageObjects/page" },
-        pageObjectClass: { type: "string", description: "Class name for page object", default: "Page" },
-        outFileName: { type: "string", description: "Optional file name for step defs" },
-        overwrite: { type: "boolean", description: "Overwrite if exists", default: false }
-      },
-      required: ["featurePath"]
-    }
+    description: "Reads a .feature file and generates a step definitions file. Parameters: featurePath (required), outDir, pageObjectPath, pageObjectClass, outFileName, overwrite"
   },
-  async ({ featurePath, outDir = "cypress/support/step_definitions", pageObjectPath = "../pageObjects/page", pageObjectClass = "Page", outFileName, overwrite = false }) => {
+  async (args = {}) => {
+    let { featurePath, outDir = "cypress/support/step_definitions", pageObjectPath = "../pageObjects/page", pageObjectClass = "Page", outFileName, overwrite = false } = args;
+    
+    // Auto-scan if no featurePath provided
+    if (!featurePath) {
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const featuresDir = path.join(__dirname, 'cypress/e2e/features');
+      
+      const fs = await import('fs');
+      const files = fs.readdirSync(featuresDir).filter(file => file.endsWith('.feature'));
+      
+      if (files.length === 0) {
+        return { content: [{ type: 'text', text: `No .feature files found in ${featuresDir}` }] };
+      }
+      
+      const selectedFile = files.includes('test.feature') ? 'test.feature' : files[0];
+      featurePath = path.join(featuresDir, selectedFile);
+    }
+    
     const fs = await import('fs');
     const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    
     const featureContent = fs.readFileSync(featurePath, 'utf8');
     const steps = parseFeatureSteps(featureContent);
     const featureName = featureNameFromContent(featureContent);
     const baseName = outFileName || `${toSafeName(featureName)}.steps.js`;
-    const destDir = outDir;
-    const destPath = path.join(destDir, baseName);
+    const fullOutDir = path.join(__dirname, outDir);
+    const destPath = path.join(fullOutDir, baseName);
 
-    fs.mkdirSync(destDir, { recursive: true });
+    fs.mkdirSync(fullOutDir, { recursive: true });
     if (fs.existsSync(destPath) && !overwrite) {
       return { content: [{ type: 'text', text: `Step definitions already exist at ${destPath}. Set overwrite=true to replace.` }] };
     }
 
     const fileContents = buildStepDefContents(featureName, steps, pageObjectClass, pageObjectPath);
     fs.writeFileSync(destPath, fileContents);
-    return { content: [{ type: 'text', text: `Generated step definitions: ${destPath}` }] };
+    return { content: [{ type: 'text', text: `✅ Generated step definitions: ${destPath}` }] };
   }
 );
 
@@ -376,29 +687,30 @@ server.registerTool(
   "generate-page-object",
   {
     title: "Generate Page Object",
-    description: "Creates a page object class file with basic locator helpers.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        className: { type: "string", description: "Class name for the page object", default: "Page" },
-        outDir: { type: "string", description: "Output directory", default: "cypress/support/pageObjects" },
-        outFileName: { type: "string", description: "Optional file name for page object" },
-        overwrite: { type: "boolean", description: "Overwrite if exists", default: false }
-      }
-    }
+    description: "Creates a page object class file with basic locator helpers. Parameters: className, outDir, outFileName, overwrite"
   },
-  async ({ className = "Page", outDir = "cypress/support/pageObjects", outFileName, overwrite = false }) => {
+  async (args = {}) => {
+    const { className = "Page", outDir = "cypress/support/pageObjects", outFileName, overwrite = false } = args;
+    
     const fs = await import('fs');
     const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    
     const fileName = outFileName || `${toSafeName(className)}.js`;
-    const destPath = path.join(outDir, fileName);
-    fs.mkdirSync(outDir, { recursive: true });
+    const fullOutDir = path.join(__dirname, outDir);
+    const destPath = path.join(fullOutDir, fileName);
+    
+    fs.mkdirSync(fullOutDir, { recursive: true });
+    
     if (fs.existsSync(destPath) && !overwrite) {
       return { content: [{ type: 'text', text: `Page object already exists at ${destPath}. Set overwrite=true to replace.` }] };
     }
+    
     const contents = buildPageObjectContents(className);
     fs.writeFileSync(destPath, contents);
-    return { content: [{ type: 'text', text: `Generated page object: ${destPath}` }] };
+    return { content: [{ type: 'text', text: `✅ Generated page object: ${destPath}` }] };
   }
 );
 
@@ -407,46 +719,62 @@ server.registerTool(
   "scaffold-from-feature",
   {
     title: "Scaffold Step Defs and Page Object from Feature",
-    description: "Generates a page object and step definitions based on a .feature file.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        featurePath: { type: "string", description: "Path to the feature file" },
-        pageObjectClass: { type: "string", description: "Class name for page object", default: "Page" },
-        stepDefsOutDir: { type: "string", description: "Output dir for step defs", default: "cypress/support/step_definitions" },
-        pageObjectOutDir: { type: "string", description: "Output dir for page objects", default: "cypress/support/pageObjects" },
-        overwrite: { type: "boolean", description: "Overwrite existing files", default: false }
-      },
-      required: ["featurePath"]
-    }
+    description: "Generates a page object and step definitions based on a .feature file. Parameters: featurePath (required), pageObjectClass, stepDefsOutDir, pageObjectOutDir, overwrite"
   },
-  async ({ featurePath, pageObjectClass = "Page", stepDefsOutDir = "cypress/support/step_definitions", pageObjectOutDir = "cypress/support/pageObjects", overwrite = false }) => {
+  async (args = {}) => {
+    let { featurePath, pageObjectClass = "Page", stepDefsOutDir = "cypress/support/step_definitions", pageObjectOutDir = "cypress/support/pageObjects", overwrite = false } = args;
+    
+    // Auto-scan if no featurePath provided
+    if (!featurePath) {
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const featuresDir = path.join(__dirname, 'cypress/e2e/features');
+      
+      const fs = await import('fs');
+      const files = fs.readdirSync(featuresDir).filter(file => file.endsWith('.feature'));
+      
+      if (files.length === 0) {
+        return { content: [{ type: 'text', text: `No .feature files found in ${featuresDir}` }] };
+      }
+      
+      const selectedFile = files.includes('test.feature') ? 'test.feature' : files[0];
+      featurePath = path.join(featuresDir, selectedFile);
+    }
+    
     const fs = await import('fs');
     const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    
     const featureContent = fs.readFileSync(featurePath, 'utf8');
     const steps = parseFeatureSteps(featureContent);
     const featureName = featureNameFromContent(featureContent);
 
-    // Generate PO
+    // Generate PO with absolute path
     const poFileName = `${toSafeName(pageObjectClass)}.js`;
-    const poPath = path.join(pageObjectOutDir, poFileName);
-    fs.mkdirSync(pageObjectOutDir, { recursive: true });
+    const fullPoOutDir = path.join(__dirname, pageObjectOutDir);
+    const poPath = path.join(fullPoOutDir, poFileName);
+    fs.mkdirSync(fullPoOutDir, { recursive: true });
     if (!fs.existsSync(poPath) || overwrite) {
       fs.writeFileSync(poPath, buildPageObjectContents(pageObjectClass));
     }
 
-    // Generate step defs
+    // Generate step defs with absolute path
     const stepFileName = `${toSafeName(featureName)}.steps.js`;
-    const stepPath = path.join(stepDefsOutDir, stepFileName);
-    fs.mkdirSync(stepDefsOutDir, { recursive: true });
+    const fullStepOutDir = path.join(__dirname, stepDefsOutDir);
+    const stepPath = path.join(fullStepOutDir, stepFileName);
+    fs.mkdirSync(fullStepOutDir, { recursive: true });
     if (!fs.existsSync(stepPath) || overwrite) {
-      const relImport = path.relative(stepDefsOutDir, path.join(pageObjectOutDir, poFileName)).replace(/\\/g, '/');
+      const relImport = path.relative(fullStepOutDir, path.join(fullPoOutDir, poFileName)).replace(/\\/g, '/');
       const importPath = relImport.startsWith('.') ? relImport : `./${relImport}`;
       const contents = buildStepDefContents(featureName, steps, pageObjectClass, importPath);
       fs.writeFileSync(stepPath, contents);
     }
 
-    return { content: [{ type: 'text', text: `Scaffolded:\n- Page Object: ${poPath}\n- Step Definitions: ${stepPath}` }] };
+    return { content: [{ type: 'text', text: `✅ Scaffolded:\n- Page Object: ${poPath}\n- Step Definitions: ${stepPath}` }] };
   }
 );
 

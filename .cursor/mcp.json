@@ -1,1 +1,8 @@
-{"mcpServers":{"cypress-bdd-pom":{"command":"node","args":["cypress-mcp.js"]}}}
+{
+  "mcpServers": {
+    "cypress-bdd-pom": {
+      "command": "node",
+      "args": ["cypress-mcp.js"]
+    }
+  }
+}
