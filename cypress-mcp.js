@@ -18,56 +18,99 @@ async function runCommand(cmd) {
 
 // Helper to run Cypress with better process handling (fixes Chrome headed mode error)
 async function runCypressCommand(spec, browser = 'chrome', headed = true, extraArgs = []) {
-  return new Promise(async (resolve, reject) => {
-    const path = await import('path');
-    const { fileURLToPath } = await import('url');
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    
-    // Use npx with cwd set to project root - this will use local Cypress from package.json
-    const args = ['cypress', 'run', '--browser', browser, ...extraArgs];
-    if (spec) {
-      args.push('--spec', spec);
-    }
-    if (headed) {
-      args.push('--headed');
-    }
-    
-    const cypressProcess = spawn('npx', args, {
-      shell: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: __dirname
-    });
-    
-    let stdout = '';
-    let stderr = '';
-    
-    cypressProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    
-    cypressProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-    
-    cypressProcess.on('close', (code) => {
-      // Cypress exit codes: 0 = success, non-zero = failure
-      if (code === 0) {
-        resolve({ stdout, stderr, code: 0 });
-      } else {
-        // Check if tests passed by looking at output
-        if (stdout.includes('All specs passed!') || stdout.includes('passing')) {
+  const path = await import('path');
+  const { fileURLToPath } = await import('url');
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  
+  // Use npx with cwd set to project root - this will use local Cypress from package.json
+  const args = ['cypress', 'run', '--browser', browser, ...extraArgs];
+  if (spec) {
+    args.push('--spec', spec);
+  }
+  if (headed) {
+    args.push('--headed');
+  }
+  
+  const command = `npx ${args.join(' ')}`;
+  
+  if (headed) {
+    // For headed mode, use spawn to allow browser window to stay visible
+    return new Promise(async (resolve, reject) => {
+      const cypressProcess = spawn('npx', args, {
+        shell: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: __dirname
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      cypressProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      cypressProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      cypressProcess.on('close', (code) => {
+        // Cypress exit codes: 0 = success, non-zero = failure
+        if (code === 0) {
           resolve({ stdout, stderr, code: 0 });
         } else {
-          reject({ stdout, stderr, code, message: `Cypress exited with code ${code}` });
+          // Check if tests passed by looking at output
+          if (stdout.includes('All specs passed!') || stdout.includes('passing')) {
+            resolve({ stdout, stderr, code: 0 });
+          } else {
+            reject({ stdout, stderr, code, message: `Cypress exited with code ${code}` });
+          }
         }
-      }
+      });
+      
+      cypressProcess.on('error', (error) => {
+        reject({ stdout, stderr, code: -1, message: error.message });
+      });
     });
-    
-    cypressProcess.on('error', (error) => {
-      reject({ stdout, stderr, code: -1, message: error.message });
+  } else {
+    // For headless mode, use spawn as before
+    return new Promise(async (resolve, reject) => {
+      const cypressProcess = spawn('npx', args, {
+        shell: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: __dirname
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      cypressProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      cypressProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      cypressProcess.on('close', (code) => {
+        // Cypress exit codes: 0 = success, non-zero = failure
+        if (code === 0) {
+          resolve({ stdout, stderr, code: 0 });
+        } else {
+          // Check if tests passed by looking at output
+          if (stdout.includes('All specs passed!') || stdout.includes('passing')) {
+            resolve({ stdout, stderr, code: 0 });
+          } else {
+            reject({ stdout, stderr, code, message: `Cypress exited with code ${code}` });
+          }
+        }
+      });
+      
+      cypressProcess.on('error', (error) => {
+        reject({ stdout, stderr, code: -1, message: error.message });
+      });
     });
-  });
+  }
 }
 
 // Helper functions for BDD automation
@@ -183,77 +226,9 @@ function convertStepToAutomation(step) {
 const server = new McpServer({ name: "cypress-bdd-pom", version: "1.0.0" });
 const registeredTools = [];
 
-registeredTools.push("hello");
-server.registerTool(
-  "hello",
-  { title: "Hello", description: "Simple test tool to confirm MCP works" },
-  async () => ({ content: [{ type: "text", text: "👋 Hello from Cypress MCP server!" }] })
-);
 
-registeredTools.push("run-tests");
-server.registerTool(
-  "run-tests",
-  { title: "Run Tests", description: "Scan features, generate temp spec, run in Electron headless" },
-  async () => {
-    try {
-      const path = await import('path');
-      const fs = await import('fs');
-      const { fileURLToPath } = await import('url');
-      const __filename = fileURLToPath(import.meta.url);
-      const __dirname = path.dirname(__filename);
-      const featuresDir = path.join(__dirname, 'cypress/e2e/features');
 
-      const files = fs.readdirSync(featuresDir).filter(f => f.endsWith('.feature'));
-      if (files.length === 0) {
-        return { content: [{ type: 'text', text: `No .feature files found in ${featuresDir}` }] };
-      }
 
-      const selectedFile = files.includes('test.feature') ? 'test.feature' : files[0];
-      const featurePath = path.join(featuresDir, selectedFile);
-      const featureContent = fs.readFileSync(featurePath, 'utf8');
-      const steps = parseFeatureSteps(featureContent);
-      if (steps.length === 0) {
-        return { content: [{ type: 'text', text: `No BDD steps found in ${selectedFile}` }] };
-      }
-
-      const automationScript = generateDirectAutomationScript(steps);
-      const tempScriptPath = path.join(__dirname, 'cypress/e2e/run_tests_temp.cy.js');
-      fs.writeFileSync(tempScriptPath, automationScript);
-
-      const result = await runCypressCommand(tempScriptPath, 'electron', false)
-        .then(({ stdout, stderr }) => ({ content: [{ type: 'text', text: `✅ Cypress (Electron headless) run completed.\nFeature File: ${selectedFile}\nAvailable Files: ${files.join(', ')}\n\n=== Output ===\n${stdout}\n${stderr ? `\nStderr:\n${stderr}` : ''}` }] }))
-        .catch(error => ({ content: [{ type: 'text', text: `❌ Cypress run failed.\nFeature File: ${selectedFile}\nAvailable Files: ${files.join(', ')}\n\nMessage: ${error.message}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}\n\nTemp file: ${tempScriptPath}` }] }));
-
-      if (result.content[0].text.startsWith('✅')) {
-        try { fs.unlinkSync(tempScriptPath); } catch {}
-      }
-      return result;
-    } catch (e) {
-      return { content: [{ type: 'text', text: `❌ run-tests error: ${e.message}` }] };
-    }
-  }
-);
-
-registeredTools.push("open-tests");
-server.registerTool(
-  "open-tests",
-  { title: "Open Tests", description: "Open Cypress interactive test runner" },
-  async () => await runCommand("npx cypress open")
-);
-
-registeredTools.push("run-smoke-tests");
-server.registerTool(
-  "run-smoke-tests",
-  { title: "Run Smoke Tests", description: "Run tests tagged with @smoke using stable runner" },
-  async () => {
-    try {
-      const { stdout, stderr } = await runCypressCommand(undefined, 'chrome', true, ['--env','grep=@smoke']);
-      return { content: [{ type: 'text', text: `✅ Smoke run completed.\n${stdout}\n${stderr ? `\nStderr:\n${stderr}` : ''}` }] };
-    } catch (error) {
-      return { content: [{ type: 'text', text: `❌ Smoke run failed.\nMessage: ${error.message}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}` }] };
-    }
-  }
-);
 
 // New BDD automation tools
 registeredTools.push("automate-feature");
@@ -327,13 +302,41 @@ server.registerTool(
     
     // Run the automation
     const featureInfo = selectedFile ? `\nFeature File: ${selectedFile}\nAvailable Files: ${availableFiles.join(', ')}\n` : '';
-    const result = await runCypressCommand(tempScriptPath, 'chrome', !headless)
-      .then(({ stdout, stderr }) => ({ 
-        content: [{ type: "text", text: `✅ Test execution completed!${featureInfo}\nGenerated script:\n${automationScript}\n\n=== Test Output ===\n${stdout}\n${stderr ? '\nStderr:\n' + stderr : ''}` }] 
-      }))
-      .catch(error => ({ 
-        content: [{ type: "text", text: `❌ Test execution failed!${featureInfo}\nGenerated script:\n${automationScript}\n\n=== Error Details ===\nMessage: ${error.message}\nCode: ${error.code}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}\n\nTemp file location: ${tempScriptPath} (not deleted for debugging)` }] 
-      }));
+    const result = await runCypressCommand(tempScriptPath, 'chrome', !headless, ['--env', 'allure=true'])
+      .then(async ({ stdout, stderr }) => {
+        let resultText = `✅ Test execution completed!${featureInfo}\nGenerated script:\n${automationScript}\n\n=== Test Output ===\n${stdout}\n${stderr ? '\nStderr:\n' + stderr : ''}`;
+        
+        // Generate and open Allure report automatically
+        try {
+          console.error('[automate-feature] Generating Allure report...');
+          const reportScript = path.join(__dirname, 'allure-report-generator.bat');
+          const { stdout: generateOutput } = await execAsync(`"${reportScript}"`);
+          resultText += `\n\n📊 Allure Report Generated:\n${generateOutput}`;
+          resultText += `\n🌐 Report opened in browser automatically!`;
+          resultText += `\n📁 Report location: ${path.join(__dirname, 'allure-report', 'index.html')}`;
+        } catch (reportError) {
+          resultText += `\n\n⚠️ Test completed but report generation failed: ${reportError.message}`;
+        }
+        
+        return { content: [{ type: "text", text: resultText }] };
+      })
+      .catch(async error => {
+        let errorText = `❌ Test execution failed!${featureInfo}\nGenerated script:\n${automationScript}\n\n=== Error Details ===\nMessage: ${error.message}\nCode: ${error.code}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}\n\nTemp file location: ${tempScriptPath} (not deleted for debugging)`;
+        
+        // Try to generate report even if tests failed
+        try {
+          console.error('[automate-feature] Test failed but attempting to generate Allure report...');
+          const reportScript = path.join(__dirname, 'allure-report-generator.bat');
+          const { stdout: generateOutput } = await execAsync(`"${reportScript}"`);
+          errorText += `\n\n📊 Allure Report Generated (with failures):\n${generateOutput}`;
+          errorText += `\n🌐 Report opened in browser automatically!`;
+          errorText += `\n📁 Report location: ${path.join(__dirname, 'allure-report', 'index.html')}`;
+        } catch (reportError) {
+          errorText += `\n\n⚠️ Could not generate report: ${reportError.message}`;
+        }
+        
+        return { content: [{ type: "text", text: errorText }] };
+      });
     
     // Clean up temp file
     if (result.content[0].text.includes('✅')) {
@@ -348,214 +351,8 @@ server.registerTool(
   }
 );
 
-registeredTools.push("parse-and-execute");
-server.registerTool(
-  "parse-and-execute",
-  { 
-    title: "Parse and Execute BDD", 
-    description: "Parse BDD steps and execute them dynamically without step definitions. If called without parameters, automatically reads from test.feature. Parameters: steps (array of strings, optional), baseUrl (optional string)"
-  },
-  async (args) => {
-    console.error('[parse-and-execute] Received args:', JSON.stringify(args));
-    console.error('[parse-and-execute] Args type:', typeof args);
-    console.error('[parse-and-execute] Args keys:', args ? Object.keys(args) : 'null/undefined');
-    
-    let { steps, baseUrl } = args || {};
-    let selectedFile = null;
-    let availableFiles = [];
-    
-    // If no steps provided, scan and read from feature files
-    if (!steps || !Array.isArray(steps) || steps.length === 0) {
-      console.error('[parse-and-execute] No steps provided, scanning for feature files...');
-      
-      try {
-        const path = await import('path');
-        const { fileURLToPath } = await import('url');
-        const __filename = fileURLToPath(import.meta.url);
-        const __dirname = path.dirname(__filename);
-        const featuresDir = path.join(__dirname, 'cypress/e2e/features');
-        
-        const fs = await import('fs');
-        
-        // Scan for all .feature files
-        availableFiles = fs.readdirSync(featuresDir).filter(file => file.endsWith('.feature'));
-        
-        if (availableFiles.length === 0) {
-          return { 
-            content: [{ 
-              type: "text", 
-              text: `No .feature files found in ${featuresDir}` 
-            }] 
-          };
-        }
-        
-        console.error('[parse-and-execute] Found feature files:', availableFiles);
-        
-        // Use the first feature file found (or test.feature if it exists)
-        selectedFile = availableFiles.includes('test.feature') ? 'test.feature' : availableFiles[0];
-        const featurePath = path.join(featuresDir, selectedFile);
-        
-        const featureContent = fs.readFileSync(featurePath, 'utf8');
-        steps = parseFeatureSteps(featureContent);
-        
-        if (steps.length === 0) {
-          return { 
-            content: [{ 
-              type: "text", 
-              text: `No BDD steps found in ${selectedFile}. Available files: ${availableFiles.join(', ')}. Please ensure the file has Given/When/Then/And steps.` 
-            }] 
-          };
-        }
-        
-        console.error(`[parse-and-execute] Using ${selectedFile}, extracted steps:`, steps);
-      } catch (error) {
-        return { 
-          content: [{ 
-            type: "text", 
-            text: `Error scanning feature files: ${error.message}. You can also pass steps directly as parameter.` 
-          }] 
-        };
-      }
-    }
-    
-    const automationScript = generateDirectAutomationScript(steps, baseUrl);
-    
-    const path = await import('path');
-    const { fileURLToPath } = await import('url');
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    const tempScriptPath = path.join(__dirname, 'cypress/e2e/direct_automation.cy.js');
-    
-    console.error('[parse-and-execute] Generated script:\n', automationScript);
-    console.error('[parse-and-execute] Temp script path:', tempScriptPath);
-    
-    const fs = await import('fs');
-    fs.writeFileSync(tempScriptPath, automationScript);
-    console.error('[parse-and-execute] Temp file written successfully');
-    
-    // Run the automation from the project root directory
-    console.error('[parse-and-execute] Running command from:', __dirname);
-    const featureInfo = selectedFile ? `\nFeature File: ${selectedFile}\nAvailable Files: ${availableFiles.join(', ')}\n` : '';
-    
-    const result = await runCypressCommand(tempScriptPath, 'chrome', true)
-      .then(({ stdout, stderr }) => ({ 
-        content: [{ type: "text", text: `✅ Test execution completed!${featureInfo}\nGenerated script:\n${automationScript}\n\n=== Test Output ===\n${stdout}\n${stderr ? '\nStderr:\n' + stderr : ''}` }] 
-      }))
-      .catch(error => ({ 
-        content: [{ type: "text", text: `❌ Test execution failed!${featureInfo}\nGenerated script:\n${automationScript}\n\n=== Error Details ===\nMessage: ${error.message}\nCode: ${error.code}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}\n\nTemp file location: ${tempScriptPath} (not deleted for debugging)` }] 
-      }));
-    
-    // Clean up temp file only on success
-    if (result.content[0].text.includes('✅')) {
-      try {
-        fs.unlinkSync(tempScriptPath);
-        console.error('[parse-and-execute] Temp file cleaned up');
-      } catch (e) {
-        console.error('Temp file cleanup failed:', e.message);
-      }
-    }
-    
-    return result;
-  }
-);
 
-// Special tool to run feature files automatically without parameters
-registeredTools.push("automate-test-feature");
-server.registerTool(
-  "automate-test-feature",
-  { 
-    title: "Automate Feature Files", 
-    description: "Automatically scans and executes feature files from cypress/e2e/features/ without step definitions. Prioritizes test.feature if found."
-  },
-  async () => {
-    const path = await import('path');
-    const { fileURLToPath } = await import('url');
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    const featuresDir = path.join(__dirname, 'cypress/e2e/features');
-    
-    console.error('[automate-test-feature] Scanning features directory:', featuresDir);
-    
-    try {
-      const fs = await import('fs');
-      
-      // Scan for all .feature files
-      const files = fs.readdirSync(featuresDir).filter(file => file.endsWith('.feature'));
-      
-      if (files.length === 0) {
-        return { 
-          content: [{ 
-            type: "text", 
-            text: `No .feature files found in ${featuresDir}` 
-          }] 
-        };
-      }
-      
-      console.error('[automate-test-feature] Found feature files:', files);
-      
-      // Use test.feature if it exists, otherwise use the first file found
-      let selectedFile = files.includes('test.feature') ? 'test.feature' : files[0];
-      const featurePath = path.join(featuresDir, selectedFile);
-      
-      console.error('[automate-test-feature] Selected file:', selectedFile);
-      console.error('[automate-test-feature] Full path:', featurePath);
-      
-      const featureContent = fs.readFileSync(featurePath, 'utf8');
-      
-      // Parse feature file and extract steps
-      const steps = parseFeatureSteps(featureContent);
-      
-      if (steps.length === 0) {
-        return { 
-          content: [{ 
-            type: "text", 
-            text: `No BDD steps found in ${selectedFile}. Available feature files: ${files.join(', ')}` 
-          }] 
-        };
-      }
-      
-      // Generate automation script
-      const automationScript = generateDirectAutomationScript(steps);
-      const tempScriptPath = path.join(__dirname, 'cypress/e2e/temp_test_feature_automation.cy.js');
-      
-      console.error('[automate-test-feature] Temp script path:', tempScriptPath);
-      console.error('[automate-test-feature] Steps found:', steps);
-      console.error('[automate-test-feature] Generated script:\n', automationScript);
-      
-      fs.writeFileSync(tempScriptPath, automationScript);
-      console.error('[automate-test-feature] Temp file written successfully');
-      
-      // Run the automation from the project root directory
-      console.error('[automate-test-feature] Running command from:', __dirname);
-      const result = await runCypressCommand(tempScriptPath, 'chrome', true)
-        .then(({ stdout, stderr }) => ({ 
-          content: [{ type: "text", text: `✅ Test execution completed!\n\nFeature File: ${selectedFile}\nAvailable Files: ${files.join(', ')}\n\nGenerated script:\n${automationScript}\n\n=== Test Output ===\n${stdout}\n${stderr ? '\nStderr:\n' + stderr : ''}` }] 
-        }))
-        .catch(error => ({ 
-          content: [{ type: "text", text: `❌ Test execution failed!\n\nFeature File: ${selectedFile}\nAvailable Files: ${files.join(', ')}\n\nGenerated script:\n${automationScript}\n\n=== Error Details ===\nMessage: ${error.message}\nCode: ${error.code}\nStdout:\n${error.stdout || 'N/A'}\n\nStderr:\n${error.stderr || 'N/A'}\n\nTemp file location: ${tempScriptPath} (not deleted for debugging)` }] 
-        }));
-      
-      // Clean up temp file only on success
-      if (result.content[0].text.includes('✅')) {
-        try {
-          fs.unlinkSync(tempScriptPath);
-          console.error('[automate-test-feature] Temp file cleaned up');
-        } catch (e) {
-          console.error('Temp file cleanup failed:', e.message);
-        }
-      }
-      
-      return result;
-    } catch (error) {
-      return { 
-        content: [{ 
-          type: "text", 
-          text: `Error: ${error.message}` 
-        }] 
-      };
-    }
-  }
-);
+
 
 // ---------- Code generation helpers ----------
 function toSafeName(name) {
@@ -775,6 +572,379 @@ server.registerTool(
     }
 
     return { content: [{ type: 'text', text: `✅ Scaffolded:\n- Page Object: ${poPath}\n- Step Definitions: ${stepPath}` }] };
+  }
+);
+
+registeredTools.push("parse-feature-steps");
+server.registerTool(
+  "parse-feature-steps",
+  {
+    title: "Parse Feature Steps and Generate Automation Script",
+    description: "Reads feature files, parses BDD steps, and generates automation scripts. Parameters: featurePath (optional), baseUrl (optional), outputPath (optional), runAutomation (boolean, optional)"
+  },
+  async (args = {}) => {
+    console.error('[parse-feature-steps] Received args:', JSON.stringify(args));
+    
+    let { featurePath, baseUrl, outputPath, runAutomation = false } = args || {};
+    let selectedFile = null;
+    let availableFiles = [];
+    
+    // Auto-scan if no featurePath provided
+    if (!featurePath) {
+      console.error('[parse-feature-steps] No featurePath provided, scanning features folder...');
+      
+      try {
+        const path = await import('path');
+        const { fileURLToPath } = await import('url');
+        const __filename = fileURLToPath(import.meta.url);
+        const __dirname = path.dirname(__filename);
+        const featuresDir = path.join(__dirname, 'cypress/e2e/features');
+        
+        const fs = await import('fs');
+        availableFiles = fs.readdirSync(featuresDir).filter(file => file.endsWith('.feature'));
+        
+        if (availableFiles.length === 0) {
+          return { 
+            content: [{ 
+              type: "text", 
+              text: `No .feature files found in ${featuresDir}` 
+            }] 
+          };
+        }
+        
+        selectedFile = availableFiles.includes('test.feature') ? 'test.feature' : availableFiles[0];
+        featurePath = path.join(featuresDir, selectedFile);
+        console.error(`[parse-feature-steps] Auto-selected: ${selectedFile} from ${availableFiles.join(', ')}`);
+        
+      } catch (error) {
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `Error scanning features folder: ${error.message}` 
+          }] 
+        };
+      }
+    }
+    
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      
+      // Read feature file content
+      const featureContent = fs.readFileSync(featurePath, 'utf8');
+      
+      // Parse steps from feature file
+      const steps = parseFeatureSteps(featureContent);
+      
+      if (steps.length === 0) {
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `No BDD steps found in ${selectedFile || path.basename(featurePath)}. Please ensure the file has Given/When/Then/And steps.` 
+          }] 
+        };
+      }
+      
+      // Generate automation script
+      const automationScript = generateDirectAutomationScript(steps, baseUrl);
+      
+      // Determine output path
+      const scriptFileName = `parsed_${selectedFile ? selectedFile.replace('.feature', '') : 'feature'}_automation.cy.js`;
+      const finalOutputPath = outputPath || path.join(__dirname, 'cypress/e2e', scriptFileName);
+      
+      // Write automation script to file
+      fs.writeFileSync(finalOutputPath, automationScript);
+      
+      let result = `✅ Feature steps parsed and automation script generated!\n\n`;
+      result += `Feature File: ${selectedFile || path.basename(featurePath)}\n`;
+      result += `Available Files: ${availableFiles.length > 0 ? availableFiles.join(', ') : 'N/A'}\n`;
+      result += `Steps Found: ${steps.length}\n`;
+      result += `Output Path: ${finalOutputPath}\n\n`;
+      result += `=== Parsed Steps ===\n`;
+      steps.forEach((step, index) => {
+        result += `${index + 1}. ${step}\n`;
+      });
+      result += `\n=== Generated Automation Script ===\n${automationScript}`;
+      
+      // Run automation if requested
+      if (runAutomation) {
+        console.error('[parse-feature-steps] Running automation as requested...');
+        
+        const automationResult = await runCypressCommand(finalOutputPath, 'chrome', true, ['--env', 'allure=true'])
+          .then(async ({ stdout, stderr }) => {
+            result += `\n\n=== Automation Execution Results ===\n`;
+            result += `✅ Test execution completed!\n`;
+            result += `Output:\n${stdout}\n`;
+            if (stderr) {
+              result += `Stderr:\n${stderr}\n`;
+            }
+            
+            // Generate and open Allure report automatically
+            try {
+              console.error('[parse-feature-steps] Generating Allure report...');
+              const reportScript = path.join(__dirname, 'allure-report-generator.bat');
+              const { stdout: generateOutput } = await execAsync(`"${reportScript}"`);
+              result += `\n\n📊 Allure Report Generated:\n${generateOutput}`;
+              result += `\n🌐 Report opened in browser automatically!`;
+              result += `\n📁 Report location: ${path.join(__dirname, 'allure-report', 'index.html')}`;
+            } catch (reportError) {
+              result += `\n\n⚠️ Test completed but report generation failed: ${reportError.message}`;
+            }
+            
+            return result;
+          })
+          .catch(async error => {
+            result += `\n\n=== Automation Execution Results ===\n`;
+            result += `❌ Test execution failed!\n`;
+            result += `Error: ${error.message}\n`;
+            result += `Code: ${error.code}\n`;
+            result += `Stdout:\n${error.stdout || 'N/A'}\n`;
+            result += `Stderr:\n${error.stderr || 'N/A'}\n`;
+            
+            // Try to generate report even if tests failed
+            try {
+              console.error('[parse-feature-steps] Test failed but attempting to generate Allure report...');
+              const reportScript = path.join(__dirname, 'allure-report-generator.bat');
+              const { stdout: generateOutput } = await execAsync(`"${reportScript}"`);
+              result += `\n\n📊 Allure Report Generated (with failures):\n${generateOutput}`;
+              result += `\n🌐 Report opened in browser automatically!`;
+              result += `\n📁 Report location: ${path.join(__dirname, 'allure-report', 'index.html')}`;
+            } catch (reportError) {
+              result += `\n\n⚠️ Could not generate report: ${reportError.message}`;
+            }
+            
+            return result;
+          });
+        
+        result = automationResult;
+      }
+      
+      return { 
+        content: [{ 
+          type: "text", 
+          text: result 
+        }] 
+      };
+      
+    } catch (error) {
+      return { 
+        content: [{ 
+          type: "text", 
+          text: `❌ Error parsing feature steps: ${error.message}` 
+        }] 
+      };
+    }
+  }
+);
+
+// ---------- Report Generation Tool ----------
+registeredTools.push("generate-allure-report");
+server.registerTool(
+  "generate-allure-report",
+  {
+    title: "Generate Allure Report",
+    description: "Generates Allure HTML report from test results. Parameters: openReport (boolean, optional) - whether to open report in browser after generation"
+  },
+  async (args = {}) => {
+    const { openReport = false } = args;
+    
+    try {
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      
+      // Check if allure-results directory exists
+      const fs = await import('fs');
+      const allureResultsDir = path.join(__dirname, 'allure-results');
+      
+      if (!fs.existsSync(allureResultsDir)) {
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `❌ No allure-results directory found at ${allureResultsDir}. Please run tests first to generate results.` 
+          }] 
+        };
+      }
+      
+      // Check if there are any result files
+      const resultFiles = fs.readdirSync(allureResultsDir).filter(file => file.endsWith('.json'));
+      if (resultFiles.length === 0) {
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `❌ No test result files found in ${allureResultsDir}. Please run tests first to generate results.` 
+          }] 
+        };
+      }
+      
+      console.error('[generate-allure-report] Generating Allure report...');
+      
+      // Generate Allure report using custom script
+      const reportScript = path.join(__dirname, 'allure-report-generator.bat');
+      const { stdout: generateOutput, stderr: generateError } = await execAsync(`"${reportScript}"`);
+      
+      if (generateError && !generateError.includes('Allure report generated')) {
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `❌ Error generating Allure report:\n${generateError}\n\nGenerate output:\n${generateOutput}` 
+          }] 
+        };
+      }
+      
+      let result = `✅ Allure report generated successfully!\n\n`;
+      result += `📊 Report Details:\n`;
+      result += `- Results Directory: ${allureResultsDir}\n`;
+      result += `- Result Files: ${resultFiles.length}\n`;
+      result += `- Report Location: ${path.join(__dirname, 'allure-report')}\n`;
+      result += `- Report URL: file://${path.join(__dirname, 'allure-report', 'index.html')}\n\n`;
+      
+      result += `📁 Result Files Found:\n`;
+      resultFiles.forEach((file, index) => {
+        result += `${index + 1}. ${file}\n`;
+      });
+      
+      result += `\n📈 Generate Output:\n${generateOutput}`;
+      
+      // The custom script already opens the report automatically
+      result += `\n\n🌐 Report opened in browser automatically (if openReport=true)!`;
+      result += `\nOr manually open: file://${path.join(__dirname, 'allure-report', 'index.html')}`;
+      
+      return { 
+        content: [{ 
+          type: "text", 
+          text: result 
+        }] 
+      };
+      
+    } catch (error) {
+      return { 
+        content: [{ 
+          type: "text", 
+          text: `❌ Error generating Allure report: ${error.message}` 
+        }] 
+      };
+    }
+  }
+);
+
+// ---------- Clean Reports Tool ----------
+registeredTools.push("clean-allure-reports");
+server.registerTool(
+  "clean-allure-reports",
+  {
+    title: "Clean Allure Reports",
+    description: "Cleans all Allure report files and directories. Removes allure-results and allure-report directories."
+  },
+  async (args = {}) => {
+    try {
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      
+      console.error('[clean-allure-reports] Cleaning Allure reports...');
+      
+      // Clean Allure reports
+      const cleanCommand = 'npm run allure:clean';
+      const { stdout: cleanOutput, stderr: cleanError } = await execAsync(cleanCommand);
+      
+      let result = `✅ Allure reports cleaned successfully!\n\n`;
+      result += `🧹 Clean Output:\n${cleanOutput}`;
+      
+      if (cleanError) {
+        result += `\n⚠️ Clean Warnings:\n${cleanError}`;
+      }
+      
+      return { 
+        content: [{ 
+          type: "text", 
+          text: result 
+        }] 
+      };
+      
+    } catch (error) {
+      return { 
+        content: [{ 
+          type: "text", 
+          text: `❌ Error cleaning Allure reports: ${error.message}` 
+        }] 
+      };
+    }
+  }
+);
+
+// ---------- Run Tests with Report Generation Tool ----------
+registeredTools.push("run-tests-with-report");
+server.registerTool(
+  "run-tests-with-report",
+  {
+    title: "Run Tests with Report Generation",
+    description: "Runs Cypress tests and automatically generates Allure report. Parameters: spec (string, optional), headless (boolean, optional), openReport (boolean, optional)"
+  },
+  async (args = {}) => {
+    const { spec, headless = true, openReport = false } = args;
+    
+    try {
+      console.error('[run-tests-with-report] Running tests with report generation...');
+      
+      // Run tests
+      const testResult = await runCypressCommand(spec, 'chrome', !headless);
+      
+      let result = `✅ Tests completed!\n\n`;
+      result += `📊 Test Results:\n${testResult.stdout}\n`;
+      
+      if (testResult.stderr) {
+        result += `\n⚠️ Test Warnings:\n${testResult.stderr}\n`;
+      }
+      
+      // Generate report after tests
+      console.error('[run-tests-with-report] Generating Allure report...');
+      
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      
+      const fs = await import('fs');
+      const allureResultsDir = path.join(__dirname, 'allure-results');
+      
+      if (fs.existsSync(allureResultsDir)) {
+        const reportScript = path.join(__dirname, 'allure-report-generator.bat');
+        const { stdout: generateOutput, stderr: generateError } = await execAsync(`"${reportScript}"`);
+        
+        result += `\n📈 Report Generation:\n`;
+        if (generateError && !generateError.includes('Report generated successfully')) {
+          result += `❌ Error generating report: ${generateError}`;
+        } else {
+          result += `✅ Allure report generated successfully!\n`;
+          result += `📁 Report location: ${path.join(__dirname, 'allure-report', 'index.html')}\n`;
+          result += `📊 Generate output: ${generateOutput}`;
+          result += `\n🌐 Report opened in browser automatically!`;
+        }
+      } else {
+        result += `\n⚠️ No allure-results directory found. Report not generated.`;
+      }
+      
+      return { 
+        content: [{ 
+          type: "text", 
+          text: result 
+        }] 
+      };
+      
+    } catch (error) {
+      return { 
+        content: [{ 
+          type: "text", 
+          text: `❌ Error running tests with report: ${error.message}` 
+        }] 
+      };
+    }
   }
 );
 

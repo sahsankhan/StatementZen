@@ -135,12 +135,24 @@ export default defineConfig({
       on("file:preprocessor", createBundler({
         plugins: [createEsbuildPlugin(config)],
       }));
+      
+      // Configure Allure with screenshot support
       allureWriter(on, config);
+      
+      // Ensure screenshots are attached to Allure reports
+      on('after:screenshot', (details) => {
+        console.log('Screenshot captured for Allure:', details.path);
+        return details;
+      });
 
       on("task", {
         // async getOtpFromGmail() {
         //   return await getLatestOtp({ timeout: 60000 });
         // },
+        log(message) {
+          console.log(message);
+          return null;
+        },
         logAllure(message) {
           console.log("Allure Task Log:", message);
           return null;
@@ -207,6 +219,105 @@ export default defineConfig({
         }
       });
 
+      // Clean old Allure results before test run to ensure fresh reports
+      on("before:run", async (details) => {
+        if (!config.env.allure) {
+          return;
+        }
+
+        console.log("\n========================================");
+        console.log("🧹 Cleaning old Allure results...");
+        console.log("========================================\n");
+
+        try {
+          const fs = await import('fs');
+          const path = await import('path');
+          const { fileURLToPath } = await import('url');
+          const __filename = fileURLToPath(import.meta.url);
+          const __dirname = path.dirname(__filename);
+          
+          const allureResultsDir = path.join(__dirname, 'allure-results');
+          const allureReportDir = path.join(__dirname, 'allure-report');
+          
+          // Clean allure-results directory
+          if (fs.existsSync(allureResultsDir)) {
+            const files = fs.readdirSync(allureResultsDir);
+            for (const file of files) {
+              fs.unlinkSync(path.join(allureResultsDir, file));
+            }
+            console.log("✅ Cleaned allure-results directory");
+          }
+          
+          // Clean allure-report directory
+          if (fs.existsSync(allureReportDir)) {
+            fs.rmSync(allureReportDir, { recursive: true, force: true });
+            console.log("✅ Cleaned allure-report directory");
+          }
+          
+          console.log("✅ Ready for fresh test results!\n");
+          
+        } catch (error) {
+          console.error("⚠️ Error cleaning Allure directories:", error.message);
+        }
+      });
+
+      // Automatically generate and open Allure report after test run
+      on("after:run", async (results) => {
+        console.log("\n========================================");
+        console.log("Test run completed. Generating Allure report...");
+        console.log("========================================\n");
+        
+        // Check if allure is enabled
+        if (!config.env.allure) {
+          console.log("Allure reporting is disabled. Skipping report generation.");
+          return;
+        }
+
+        // Add delay to ensure browser closes cleanly
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        try {
+          const { exec } = await import('child_process');
+          const { promisify } = await import('util');
+          const execAsync = promisify(exec);
+          const path = await import('path');
+          const { fileURLToPath } = await import('url');
+          const __filename = fileURLToPath(import.meta.url);
+          const __dirname = path.dirname(__filename);
+          
+          const reportScript = path.join(__dirname, 'allure-report-generator.bat');
+          
+          console.log("📊 Generating Allure report...");
+          
+          // Execute the batch file with increased timeout
+          const { stdout, stderr } = await execAsync(`"${reportScript}"`, {
+            cwd: __dirname,
+            windowsHide: false,
+            timeout: 60000, // 60 second timeout
+            maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+          });
+          
+          if (stdout) {
+            console.log(stdout);
+          }
+          if (stderr && !stderr.includes('Report successfully generated')) {
+            console.error(stderr);
+          }
+          
+          console.log("\n✅ Allure report generated and opened successfully!");
+          console.log("🌐 Report available at: http://localhost:4040");
+          console.log("📁 Report location:", path.join(__dirname, 'allure-report', 'index.html'));
+          console.log("\n========================================\n");
+          
+        } catch (error) {
+          console.error("\n❌ Error generating Allure report:", error.message);
+          console.error("📝 Results saved to: allure-results/");
+          console.error("🔧 You can manually generate the report by running:");
+          console.error("   cmd /c allure-report-generator.bat");
+          console.error("\n========================================\n");
+        }
+      });
+
       return config;
     },
     env: {
@@ -214,7 +325,16 @@ export default defineConfig({
       validEmail: process.env.CYPRESS_validEmail || "zubair.a@yetiinc.com",
       validPassword: process.env.CYPRESS_validPassword || "Vista123+",
       allure: true,
+      allureResultsPath: "allure-results",
       allureAddVideoOnPass: false,
+      allureAttachRequests: false,
+      allureLogCyCommands: true,
+      allureSkipCommands: "wrap",
+      allureLogGherkin: true,
+      allureAttachScreenshots: true,
     },
+    screenshotOnRunFailure: true,
+    screenshotsFolder: "cypress/screenshots",
+    trashAssetsBeforeRuns: false,
   },
 });

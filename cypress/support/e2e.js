@@ -17,3 +17,23 @@
 import './commands'
 require('cypress-xpath');
 import '@shelex/cypress-allure-plugin';
+
+// Configure screenshot capture
+Cypress.Screenshot.defaults({
+  capture: 'viewport'
+});
+
+// Attach screenshots to Allure after each test
+afterEach(function() {
+  const testState = this.currentTest.state;
+  const testTitle = this.currentTest.title;
+  const testParent = this.currentTest.parent?.title || 'Test';
+  
+  if (testState === 'failed') {
+    // Take screenshot and attach to Allure
+    const screenshotName = `${testParent} -- ${testTitle}`;
+    cy.screenshot(screenshotName).then(() => {
+      cy.task('log', `Screenshot captured for failed test: ${screenshotName}`);
+    });
+  }
+});
