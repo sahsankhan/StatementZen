@@ -1,13 +1,12 @@
 name: Cypress Feature Tests
 
-# Run workflow on push and pull request events
 on:
   push:
     branches:
-      - main
+      - mcp
   pull_request:
     branches:
-      - main
+      - mcp
 
 jobs:
   cypress-run:
@@ -22,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'  # Use your Node version
+          node-version: '20'  # Replace with your Node version
 
       # 3. Install dependencies
       - name: Install dependencies
@@ -32,7 +31,7 @@ jobs:
       - name: Run Cypress tests
         run: npx cypress run --spec "cypress/e2e/features/**/*.feature"
 
-      # Optional: Upload Cypress videos/screenshots on failure
+      # Optional: Upload Cypress artifacts on failure
       - name: Upload Cypress artifacts
         if: failure()
         uses: actions/upload-artifact@v3
