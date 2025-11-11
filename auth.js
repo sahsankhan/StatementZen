@@ -1,9 +1,13 @@
 // auth.js
-const fs = require('fs');
-const http = require('http');
-const url = require('url');
-const path = require('path');
-const { google } = require('googleapis');
+import fs from 'fs';
+import http from 'http';
+import url from 'url';
+import path from 'path';
+import { google } from 'googleapis';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const CREDENTIALS_PATH = path.join(__dirname, 'credentials.json');
 const TOKEN_PATH = path.join(__dirname, 'token.json');

@@ -10,12 +10,19 @@ Given("I am on the login page", () => {
 });
 
 // This step needs to be enabled to close Cookies Modal
-// When("I click on the second Deny button", () => {
-//   login.getDenyButton().click();
-// });
+When("I click on the second Deny button", () => {
+  login.getDenyButton().click();
+});
 
 When("I enters email {string}", (email) => {
   cy.wait(5000);
+  // Try to close any modals first
+  cy.get('body').then(($body) => {
+    if ($body.find('button:contains("Deny")').length > 1) {
+      login.getDenyButton().click({ force: true });
+      cy.wait(5000);
+    }
+  });
   login.enterEmail(email || Cypress.env('validEmail'));
 });
 

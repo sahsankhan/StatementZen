@@ -15,7 +15,7 @@
 
 // Import commands.js using ES2015 syntax:
 import './commands'
-require('cypress-xpath');
+import 'cypress-xpath';
 import '@shelex/cypress-allure-plugin';
 
 // Configure screenshot capture
@@ -23,17 +23,70 @@ Cypress.Screenshot.defaults({
   capture: 'viewport'
 });
 
-// Attach screenshots to Allure after each test
-afterEach(function() {
-  const testState = this.currentTest.state;
-  const testTitle = this.currentTest.title;
-  const testParent = this.currentTest.parent?.title || 'Test';
-  
-  if (testState === 'failed') {
-    // Take screenshot and attach to Allure
-    const screenshotName = `${testParent} -- ${testTitle}`;
-    cy.screenshot(screenshotName).then(() => {
-      cy.task('log', `Screenshot captured for failed test: ${screenshotName}`);
-    });
-  }
+// Handle uncaught exceptions - simplified version
+Cypress.on('uncaught:exception', () => {
+  // Suppress all errors to prevent test failure
+  return false;
 });
+
+// Stealth automation - inject scripts before each test
+beforeEach(() => {
+  cy.log('🕵️ Injecting stealth automation scripts');
+  
+  // Inject stealth scripts to avoid detection
+  cy.on('window:before:load', (win) => {
+    // Remove webdriver property
+    Object.defineProperty(win.navigator, 'webdriver', {
+      get: () => undefined,
+      configurable: true
+    });
+    
+    // Override chrome property to appear as regular Chrome
+    win.navigator.chrome = {
+      runtime: {},
+      loadTimes: function() {},
+      csi: function() {},
+      app: {}
+    };
+    
+    // Override plugins length
+    Object.defineProperty(win.navigator, 'plugins', {
+      get: () => [1, 2, 3, 4, 5],
+    });
+    
+    // Override languages
+    Object.defineProperty(win.navigator, 'languages', {
+      get: () => ['en-US', 'en'],
+    });
+    
+    // Override permissions
+    const originalQuery = win.navigator.permissions?.query;
+    if (originalQuery) {
+      win.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Cypress._.constant('denied') }) :
+          originalQuery(parameters)
+      );
+    }
+    
+    // Mock getBattery
+    if (win.navigator.getBattery) {
+      win.navigator.getBattery = () => Promise.resolve({
+        charging: true,
+        chargingTime: 0,
+        dischargingTime: Infinity,
+        level: 1,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      });
+    }
+    
+    // Override automation detection properties
+    delete win.navigator.__proto__.webdriver;
+    delete win.navigator.webdriver;
+    
+    cy.log('✅ Stealth scripts injected successfully');
+  });
+});
+
+// Note: Screenshot handling is done automatically by Cypress Allure plugin

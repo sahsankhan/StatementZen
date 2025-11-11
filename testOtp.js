@@ -1,4 +1,4 @@
-const { getLatestOtp } = require('./gmail');
+import { getLatestOtp } from './gmail.js';
 
 async function testOtp() {
   try {

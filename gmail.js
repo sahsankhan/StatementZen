@@ -154,9 +154,11 @@
 
 // module.exports = { getLatestOtp };
 
-require('dotenv').config();
-const { google } = require('googleapis');
-const { convert } = require('html-to-text');
+import dotenv from 'dotenv';
+import { google } from 'googleapis';
+import { convert } from 'html-to-text';
+
+dotenv.config();
 
 function base64UrlDecode(str) {
   if (!str) return '';
@@ -304,4 +306,4 @@ async function getLatestOtp({ query, timeout = 120000, pollInterval = 5000, digi
   throw new Error('OTP not found within timeout');
 }
 
-module.exports = { getLatestOtp };
+export { getLatestOtp };

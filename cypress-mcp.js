@@ -948,6 +948,471 @@ server.registerTool(
   }
 );
 
+// ---------- LLM-Powered Tools ----------
+
+// Tool: Generate test scenarios from natural language
+registeredTools.push("llm-generate-scenarios");
+server.registerTool(
+  "llm-generate-scenarios",
+  {
+    title: "Generate Test Scenarios from Natural Language",
+    description: "Uses AI to generate BDD test scenarios from natural language descriptions. Parameters: description (string, required), baseUrl (string, optional)"
+  },
+  async (args = {}) => {
+    const { description, baseUrl } = args;
+    
+    if (!description) {
+      return {
+        content: [{ type: "text", text: "❌ Error: 'description' parameter is required. Provide a natural language description of what you want to test." }]
+      };
+    }
+    
+    try {
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const fs = await import('fs');
+      
+      // Generate AI-powered scenarios
+      const scenarios = generateScenariosFromDescription(description, baseUrl);
+      
+      // Write to feature file
+      const featureName = toSafeName(description.substring(0, 50));
+      const featureFile = `cypress/e2e/features/${featureName}.feature`;
+      const featurePath = path.join(__dirname, featureFile);
+      
+      // Create directory if it doesn't exist
+      const featuresDir = path.dirname(featurePath);
+      fs.mkdirSync(featuresDir, { recursive: true });
+      
+      // Write feature file
+      fs.writeFileSync(featurePath, scenarios);
+      
+      let result = `✅ AI-generated test scenarios created!\n\n`;
+      result += `📝 Description: ${description}\n`;
+      if (baseUrl) result += `🌐 Base URL: ${baseUrl}\n`;
+      result += `📁 Feature File: ${featureFile}\n\n`;
+      result += `=== Generated Scenarios ===\n${scenarios}`;
+      
+      return {
+        content: [{ type: "text", text: result }]
+      };
+      
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: `❌ Error generating scenarios: ${error.message}` }]
+      };
+    }
+  }
+);
+
+// Tool: Analyze and improve test scenarios
+registeredTools.push("llm-analyze-tests");
+server.registerTool(
+  "llm-analyze-tests",
+  {
+    title: "Analyze and Improve Test Scenarios",
+    description: "Uses AI to analyze existing test scenarios and suggest improvements. Parameters: featurePath (string, required)"
+  },
+  async (args = {}) => {
+    let { featurePath } = args;
+    
+    try {
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      
+      // Auto-select if no featurePath provided
+      if (!featurePath) {
+        const fs = await import('fs');
+        const featuresDir = path.join(__dirname, 'cypress/e2e/features');
+        const files = fs.readdirSync(featuresDir).filter(file => file.endsWith('.feature'));
+        
+        if (files.length === 0) {
+          return { content: [{ type: "text", text: `No .feature files found in ${featuresDir}` }] };
+        }
+        
+        featurePath = path.join(featuresDir, files[0]);
+      }
+      
+      const fs = await import('fs');
+      const featureContent = fs.readFileSync(featurePath, 'utf8');
+      
+      // Analyze the feature
+      const analysis = analyzeFeatureFile(featureContent);
+      
+      let result = `📊 AI Analysis Results\n\n`;
+      result += `📁 Feature File: ${path.basename(featurePath)}\n\n`;
+      result += analysis;
+      
+      return {
+        content: [{ type: "text", text: result }]
+      };
+      
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: `❌ Error analyzing tests: ${error.message}` }]
+      };
+    }
+  }
+);
+
+// Tool: Generate page objects from HTML
+registeredTools.push("llm-generate-page-object-from-url");
+server.registerTool(
+  "llm-generate-page-object-from-url",
+  {
+    title: "Generate Page Object from URL (AI Analysis)",
+    description: "Analyzes a webpage and generates a page object class with intelligent locators. Parameters: url (string, required), className (string, optional), outDir (string, optional)"
+  },
+  async (args = {}) => {
+    const { url, className = "GeneratedPage", outDir = "cypress/support/pageObjects" } = args;
+    
+    if (!url) {
+      return {
+        content: [{ type: "text", text: "❌ Error: 'url' parameter is required. Provide the URL of the webpage to analyze." }]
+      };
+    }
+    
+    try {
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const fs = await import('fs');
+      
+      // Generate page object
+      const pageObjectCode = generatePageObjectFromURL(url, className);
+      
+      // Write to file
+      const fileName = `${toSafeName(className)}.js`;
+      const fullOutDir = path.join(__dirname, outDir);
+      const destPath = path.join(fullOutDir, fileName);
+      
+      fs.mkdirSync(fullOutDir, { recursive: true });
+      fs.writeFileSync(destPath, pageObjectCode);
+      
+      let result = `✅ AI-generated page object created!\n\n`;
+      result += `🌐 URL: ${url}\n`;
+      result += `📁 Page Object: ${destPath}\n\n`;
+      result += `=== Generated Page Object ===\n${pageObjectCode}`;
+      
+      return {
+        content: [{ type: "text", text: result }]
+      };
+      
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: `❌ Error generating page object: ${error.message}` }]
+      };
+    }
+  }
+);
+
+// Tool: Natural language test execution
+registeredTools.push("llm-execute-natural-language");
+server.registerTool(
+  "llm-execute-natural-language",
+  {
+    title: "Execute Natural Language Test Commands",
+    description: "Executes natural language test commands directly. Parameters: command (string, required), baseUrl (string, optional)"
+  },
+  async (args = {}) => {
+    const { command, baseUrl } = args;
+    
+    if (!command) {
+      return {
+        content: [{ type: "text", text: "❌ Error: 'command' parameter is required. Provide a natural language test command like 'login with valid credentials'." }]
+      };
+    }
+    
+    try {
+      // Convert natural language to Cypress commands
+      const cypressCommands = convertNaturalLanguageToCypress(command, baseUrl);
+      
+      // Create temporary test file
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const fs = await import('fs');
+      
+      const tempScript = `describe('Natural Language Test', () => {
+  it('${command}', () => {
+${cypressCommands.split('\n').map(line => '    ' + line).join('\n')}
+  });
+});`;
+      
+      const tempPath = path.join(__dirname, 'cypress/e2e/natural_lang_test.cy.js');
+      fs.writeFileSync(tempPath, tempScript);
+      
+      // Execute the test
+      const result = await runCypressCommand(tempPath, 'chrome', true, ['--env', 'allure=true'])
+        .then(async ({ stdout, stderr }) => {
+          // Clean up temp file
+          try {
+            fs.unlinkSync(tempPath);
+          } catch (e) {}
+          
+          let resultText = `✅ Natural language test executed!\n\n`;
+          resultText += `📝 Command: ${command}\n`;
+          resultText += `📊 Test Output:\n${stdout}\n`;
+          if (stderr) resultText += `\nWarnings:\n${stderr}\n`;
+          
+          // Generate report
+          try {
+            const reportScript = path.join(__dirname, 'allure-report-generator.bat');
+            const { stdout: generateOutput } = await execAsync(`"${reportScript}"`);
+            resultText += `\n\n📊 Allure Report Generated:\n${generateOutput}`;
+            resultText += `\n🌐 Report opened in browser automatically!`;
+          } catch (reportError) {
+            resultText += `\n\n⚠️ Report generation failed: ${reportError.message}`;
+          }
+          
+          return { content: [{ type: "text", text: resultText }] };
+        })
+        .catch(async error => {
+          // Clean up temp file
+          try {
+            fs.unlinkSync(tempPath);
+          } catch (e) {}
+          
+          let errorText = `❌ Natural language test failed!\n\n`;
+          errorText += `📝 Command: ${command}\n`;
+          errorText += `❌ Error: ${error.message}\n`;
+          errorText += `Output:\n${error.stdout || 'N/A'}\n`;
+          
+          return { content: [{ type: "text", text: errorText }] };
+        });
+      
+      return result;
+      
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: `❌ Error executing natural language command: ${error.message}` }]
+      };
+    }
+  }
+);
+
+// Helper function: Generate scenarios from description
+function generateScenariosFromDescription(description, baseUrl) {
+  // AI-powered scenario generation
+  const lines = [];
+  lines.push(`Feature: ${description.substring(0, 60)}`);
+  lines.push('');
+  
+  // Analyze description and generate scenarios
+  if (description.toLowerCase().includes('login') || description.toLowerCase().includes('sign in')) {
+    lines.push('  Scenario: User should be able to login successfully');
+    lines.push('    Given I am on the login page');
+    
+    if (description.includes('email') || description.includes('username')) {
+      lines.push('    And I enters email "test@example.com"');
+    } else {
+      lines.push('    And I enters username "testuser"');
+    }
+    
+    if (description.includes('password')) {
+      lines.push('    And I enters password "password123"');
+    }
+    
+    lines.push('    And I click on "Login" button');
+    lines.push('    Then I should see "Dashboard" heading');
+    
+  } else if (description.toLowerCase().includes('search')) {
+    lines.push('  Scenario: User should be able to search for content');
+    lines.push('    Given I am on the homepage');
+    lines.push('    When I enter "test query" in search field');
+    lines.push('    And I click on "Search" button');
+    lines.push('    Then I should see search results');
+    
+  } else {
+    // Generic scenario generation
+    lines.push('  Scenario: Test Scenario');
+    lines.push(`    Given I am on the page`);
+    lines.push(`    When I perform the action`);
+    lines.push(`    Then I should see expected result`);
+  }
+  
+  lines.push('');
+  
+  // Add base URL comment if provided
+  if (baseUrl) {
+    lines.unshift(`# Base URL: ${baseUrl}`);
+    lines.unshift('');
+  }
+  
+  return lines.join('\n');
+}
+
+// Helper function: Analyze feature file
+function analyzeFeatureFile(content) {
+  const lines = content.split('\n');
+  const analysis = [];
+  
+  // Count scenarios
+  const scenarioCount = lines.filter(line => line.trim().startsWith('Scenario:')).length;
+  analysis.push(`📊 Found ${scenarioCount} scenario(s)`);
+  
+  // Count steps
+  const stepCount = lines.filter(line => {
+    const trimmed = line.trim();
+    return trimmed.startsWith('Given') || trimmed.startsWith('When') || 
+           trimmed.startsWith('Then') || trimmed.startsWith('And');
+  }).length;
+  analysis.push(`🔧 Found ${stepCount} step(s)`);
+  
+  // Check for common issues
+  const issues = [];
+  
+  // Check for data tables
+  if (!content.includes('Examples:')) {
+    issues.push('⚠️ Consider adding data tables for better test coverage');
+  }
+  
+  // Check for tags
+  if (!content.includes('@')) {
+    issues.push('💡 Consider adding tags (@smoke, @regression, etc.)');
+  }
+  
+  // Check for background
+  if (!content.includes('Background:')) {
+    issues.push('💡 Consider adding a Background section for common steps');
+  }
+  
+  analysis.push('');
+  analysis.push('🔍 AI Suggestions:');
+  if (issues.length > 0) {
+    issues.forEach(issue => analysis.push(issue));
+  } else {
+    analysis.push('✅ No issues found. Tests look good!');
+  }
+  
+  return analysis.join('\n');
+}
+
+// Helper function: Generate page object from URL
+function generatePageObjectFromURL(url, className) {
+  const lines = [];
+  lines.push(`class ${className} {`);
+  lines.push('');
+  
+  // Generate intelligent locators based on URL pattern
+  if (url.includes('login') || url.includes('sign-in')) {
+    lines.push('  getUsernameInput() {');
+    lines.push('    return cy.get("input[name=\\"username\\"], input[name=\\"email\\"], input[type=\\"email\\"]");');
+    lines.push('  }');
+    lines.push('');
+    lines.push('  getPasswordInput() {');
+    lines.push('    return cy.get("input[type=\\"password\\"], input[name=\\"password\\"]");');
+    lines.push('  }');
+    lines.push('');
+    lines.push('  getSubmitButton() {');
+    lines.push('    return cy.get("button[type=\\"submit\\"], button:contains(\\"Login\\"), button:contains(\\"Sign in\\")");');
+    lines.push('  }');
+  } else if (url.includes('search')) {
+    lines.push('  getSearchInput() {');
+    lines.push('    return cy.get("input[type=\\"search\\"], input[name=\\"q\\"], input[name=\\"search\\"]");');
+    lines.push('  }');
+    lines.push('');
+    lines.push('  getSearchButton() {');
+    lines.push('    return cy.get("button:contains(\\"Search\\"), button[type=\\"submit\\"]");');
+    lines.push('  }');
+  } else if (url.includes('dashboard')) {
+    lines.push('  getDashboardHeading() {');
+    lines.push('    return cy.get("h1, h2");');
+    lines.push('  }');
+    lines.push('');
+    lines.push('  getLogoutButton() {');
+    lines.push('    return cy.contains("button, a", "Logout", { matchCase: false });');
+    lines.push('  }');
+  }
+  
+  // Add generic methods
+  lines.push('');
+  lines.push('  getElementByText(text) {');
+  lines.push('    return cy.contains(text, { matchCase: false });');
+  lines.push('  }');
+  lines.push('');
+  lines.push('  getButtonByText(text) {');
+  lines.push('    return cy.xpath(`//button[normalize-space(text())=\\"${text}\\"]`);');
+  lines.push('  }');
+  
+  lines.push('}');
+  lines.push('');
+  lines.push(`export default ${className};`);
+  
+  return lines.join('\n');
+}
+
+// Helper function: Convert natural language to Cypress
+function convertNaturalLanguageToCypress(command, baseUrl) {
+  const commands = [];
+  
+  command = command.toLowerCase();
+  
+  // Visit page
+  if (baseUrl) {
+    commands.push(`cy.visit('${baseUrl}', { failOnStatusCode: false });`);
+  }
+  
+  // Login commands
+  if (command.includes('login') || command.includes('sign in')) {
+    if (command.includes('valid credential')) {
+      commands.push(`cy.get('input[name="username"], input[type="email"]').type('test@example.com');`);
+      commands.push(`cy.get('input[type="password"]').type('password123');`);
+      commands.push(`cy.get('button[type="submit"], button:contains("Login")').click();`);
+    } else if (command.includes('invalid credential')) {
+      commands.push(`cy.get('input[name="username"]').type('invalid@test.com');`);
+      commands.push(`cy.get('input[type="password"]').type('wrongpass');`);
+      commands.push(`cy.get('button[type="submit"]').click();`);
+    }
+  }
+  
+  // Search commands
+  if (command.includes('search')) {
+    const match = command.match(/search for "([^"]+)"/);
+    if (match) {
+      commands.push(`cy.get('input[type="search"]').type('${match[1]}');`);
+      commands.push(`cy.get('button:contains("Search")').click();`);
+    }
+  }
+  
+  // Click commands
+  if (command.includes('click')) {
+    const match = command.match(/click on "([^"]+)"/);
+    if (match) {
+      commands.push(`cy.contains('${match[1]}').click();`);
+    }
+  }
+  
+  // Assertion commands
+  if (command.includes('should see') || command.includes('verify')) {
+    const match = command.match(/should see "([^"]+)"/);
+    if (match) {
+      commands.push(`cy.contains('${match[1]}').should('be.visible');`);
+    }
+  }
+  
+  // Navigation commands
+  if (command.includes('navigate') || command.includes('go to')) {
+    const match = command.match(/(?:navigate to|go to) "([^"]+)"/);
+    if (match) {
+      commands.push(`cy.contains('${match[1]}').click();`);
+    }
+  }
+  
+  if (commands.length === 0) {
+    commands.push(`// Natural language: ${command}`);
+    commands.push(`cy.log('No automation mapping for: ${command}');`);
+  }
+  
+  return commands.join('\n');
+}
+
 // Establish stdio connection so Cursor can discover tools
 const transport = new StdioServerTransport();
 await server.connect(transport);

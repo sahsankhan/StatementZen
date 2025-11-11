@@ -125,11 +125,19 @@ import createBundler from "@bahmutov/cypress-esbuild-preprocessor";
 import { addCucumberPreprocessorPlugin } from "@badeball/cypress-cucumber-preprocessor";
 import { createEsbuildPlugin } from "@badeball/cypress-cucumber-preprocessor/esbuild";
 import allureWriter from '@shelex/cypress-allure-plugin/writer';
-// import { getLatestOtp } from "./gmail.js"; // Commented out for MCP automation
+import { getLatestOtp } from "./gmail.js";
 
 export default defineConfig({
   e2e: {
     specPattern: "cypress/e2e/**/*.{feature,cy.js}",
+    chromeWebSecurity: false, // Disable web security to allow cross-origin requests and suppress script errors
+    modifyObstructiveCode: false, // Don't modify obstructive code
+    experimentalModifyObstructiveThirdPartyCode: true, // Handle third-party script errors
+    numTestsKeptInMemory: 0, // Prevent memory leaks by not keeping tests in memory
+    viewportWidth: 1920, // Set realistic viewport
+    viewportHeight: 1080,
+    defaultCommandTimeout: 15000, // Increase default timeout
+    pageLoadTimeout: 60000, // Increase page load timeout
     async setupNodeEvents(on, config) {
       await addCucumberPreprocessorPlugin(on, config);
       on("file:preprocessor", createBundler({
@@ -145,10 +153,75 @@ export default defineConfig({
         return details;
       });
 
+      // Configure browser launch arguments for ADVANCED stealth mode
+      on('before:browser:launch', (browser, launchOptions) => {
+        if (browser.family === 'chromium' || browser.name === 'electron') {
+          console.log('🛡️ Configuring ADVANCED stealth browser arguments...');
+          
+          // User agent to appear as a real browser
+          launchOptions.args.push('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          
+          // Primary automation detection bypass
+          launchOptions.args.push('--disable-blink-features=AutomationControlled');
+          
+          // Remove automation indicators
+          launchOptions.args.push('--exclude-switches=enable-automation');
+          launchOptions.args.push('--disable-automation');
+          
+          // Security and sandbox settings
+          launchOptions.args.push('--disable-dev-shm-usage');
+          launchOptions.args.push('--no-sandbox');
+          launchOptions.args.push('--disable-setuid-sandbox');
+          launchOptions.args.push('--disable-web-security');
+          launchOptions.args.push('--disable-features=IsolateOrigins,site-per-process');
+          
+          // Additional stealth flags
+          launchOptions.args.push('--disable-infobars');
+          launchOptions.args.push('--disable-notifications');
+          launchOptions.args.push('--disable-popup-blocking');
+          launchOptions.args.push('--disable-save-password-bubble');
+          launchOptions.args.push('--disable-translate');
+          launchOptions.args.push('--disable-background-timer-throttling');
+          launchOptions.args.push('--disable-backgrounding-occluded-windows');
+          launchOptions.args.push('--disable-breakpad');
+          launchOptions.args.push('--disable-component-extensions-with-background-pages');
+          launchOptions.args.push('--disable-extensions');
+          launchOptions.args.push('--disable-features=TranslateUI');
+          launchOptions.args.push('--disable-hang-monitor');
+          launchOptions.args.push('--disable-ipc-flooding-protection');
+          launchOptions.args.push('--disable-prompt-on-repost');
+          launchOptions.args.push('--disable-renderer-backgrounding');
+          launchOptions.args.push('--disable-sync');
+          launchOptions.args.push('--metrics-recording-only');
+          launchOptions.args.push('--no-first-run');
+          launchOptions.args.push('--safebrowsing-disable-auto-update');
+          launchOptions.args.push('--enable-features=NetworkService,NetworkServiceInProcess');
+          launchOptions.args.push('--disable-features=site-per-process');
+          launchOptions.args.push('--disable-features=VizDisplayCompositor');
+          
+          // Performance and compatibility
+          launchOptions.args.push('--ignore-certificate-errors');
+          launchOptions.args.push('--ignore-ssl-errors');
+          launchOptions.args.push('--allow-running-insecure-content');
+          
+          // Set window size and position for consistency
+          launchOptions.args.push('--window-size=1920,1080');
+          launchOptions.args.push('--start-maximized');
+          
+          // GPU acceleration settings
+          launchOptions.args.push('--disable-gpu');
+          launchOptions.args.push('--disable-software-rasterizer');
+          
+          console.log('✅ Advanced stealth browser configuration applied');
+          console.log(`📋 Total args: ${launchOptions.args.length}`);
+        }
+        return launchOptions;
+      });
+
       on("task", {
-        // async getOtpFromGmail() {
-        //   return await getLatestOtp({ timeout: 60000 });
-        // },
+        async getOtpFromGmail() {
+          return await getLatestOtp({ timeout: 60000 });
+        },
         log(message) {
           console.log(message);
           return null;
