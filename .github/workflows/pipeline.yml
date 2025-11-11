@@ -29,6 +29,9 @@ jobs:
 
       # 4. Run Cypress feature tests
       - name: Run Cypress tests
+        env:
+          GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
+          GMAIL_TOKEN: ${{ secrets.GMAIL_TOKEN }}
         run: npx cypress run --spec "cypress/e2e/features/**/*.feature"
 
       # Optional: Upload Cypress artifacts on failure
