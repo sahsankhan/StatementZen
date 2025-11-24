@@ -4,6 +4,65 @@ import ERPIntegrationPage from "../pageObjects/erpIntegrationPage.js";
 
 const login = new LoginPage();
 const erpPage = new ERPIntegrationPage();
+const INTUIT_ORIGIN = "https://accounts.intuit.com";
+
+const restoreQuickBooksSession = () =>
+  cy.readFile("auth.json", { log: false }).then((storageState) => {
+    if (!storageState) {
+      throw new Error(
+        "auth.json was not found. Run `npm run manual-login` first to capture the QuickBooks session."
+      );
+    }
+
+    const cookies =
+      storageState.cookies?.filter((cookie) =>
+        cookie.domain?.includes("intuit.com")
+      ) ?? [];
+
+    const localStorageEntries =
+      storageState.origins
+        ?.filter((entry) => entry.origin?.includes("intuit.com"))
+        ?.flatMap((entry) => entry.localStorage ?? []) ?? [];
+
+    cy.log(
+      `Restoring QuickBooks session (${cookies.length} cookies, ${localStorageEntries.length} localStorage items)`
+    );
+
+    return cy.origin(
+      INTUIT_ORIGIN,
+      { args: { cookies, localStorageEntries } },
+      ({ cookies, localStorageEntries }) => {
+        cookies.forEach((cookie) => {
+          cy.setCookie(cookie.name, cookie.value, {
+            domain: cookie.domain,
+            path: cookie.path || "/",
+            expiry:
+              typeof cookie.expires === "number" && cookie.expires > 0
+                ? Math.floor(cookie.expires)
+                : undefined,
+            secure: cookie.secure,
+            httpOnly: cookie.httpOnly,
+            sameSite: cookie.sameSite,
+          });
+        });
+
+        if (localStorageEntries.length) {
+          cy.window().then((win) => {
+            localStorageEntries.forEach(({ name, value }) => {
+              win.localStorage.setItem(name, value);
+            });
+          });
+        }
+
+        cy.reload();
+
+        cy.contains("Let's get you in to Quickbooks", {
+          timeout: 20000,
+          matchCase: false,
+        }).should("be.visible");
+      }
+    );
+  });
 
 // Dashboard steps
 When("I click on {string} button on Dashboard", (buttonText) => {
@@ -77,9 +136,10 @@ Then("I should see {string} screen", (screenText) => {
 });
 
 When("I click on Settings button on the left sidebar", () => {
-  cy.get('i[class*="dx-icon-settings"]', { timeout: 15000 })
+  erpPage
+    .getSettingsButton()
     .should("be.visible")
-    .dblclick({ force: true });
+    .click({ force: true });
 });
 
 When("I click Connect to Xero button on ERP screen", () => {
@@ -89,46 +149,32 @@ When("I click Connect to Xero button on ERP screen", () => {
 });
 
 When("I click Connect to Quickbooks button on ERP screen", () => {
-  cy.log('Step 1: Clicking QuickBooks Connect button');
-
-  // Click the QuickBooks connect button
+  cy.log("Step 1: Triggering QuickBooks connection flow");
   cy.get('div[class*="erp-quickbooks-btn"]', { timeout: 15000 })
     .should("be.visible")
     .click({ force: true });
 
-  cy.wait(4000); // Wait for redirect to QuickBooks
-
-  cy.log('Step 2: Switching to QuickBooks domain and setting cookies');
-
-  // Use cy.origin to interact with the QuickBooks domain
-  cy.origin('https://quickbooks.intuit.com', () => {
-    cy.fixture('cookies.json').then((cookies) => {
-      cy.log(`Setting ${cookies.length} cookies on Intuit domain`);
-
-      cookies.forEach((cookie) => {
-        cy.setCookie(cookie.name, cookie.value, {
-          domain: cookie.domain,
-          path: cookie.path || '/',
-          secure: cookie.secure,
-          httpOnly: cookie.httpOnly,
-          expiry: Math.floor(cookie.expirationDate)
-        });
-      });
-
-      cy.log('✅ Cookies set successfully');
-      cy.reload();
-      cy.wait(3000);
-
-      // Optional: confirm login success
-      cy.get('body').then(($body) => {
-        if ($body.text().includes('Dashboard')) {
-          cy.log('✅ QuickBooks session restored without OTP');
-        } else {
-          cy.log('⚠️ Session not restored — cookies may have expired');
-        }
-      });
-    });
+  cy.log("Step 2: Restoring QuickBooks session inside Intuit origin");
+  cy.origin(INTUIT_ORIGIN, () => {
+    cy.log("Waiting for Intuit login page to load...");
+    cy.contains("Sign in", { timeout: 20000, matchCase: false }).should(
+      "be.visible"
+    );
   });
+
+  restoreQuickBooksSession();
+
+  cy.log("Step 3: Refreshing QuickBooks page to apply session");
+  cy.origin(INTUIT_ORIGIN, () => {
+    cy.reload();
+
+    cy.contains("Let's get you in to Quickbooks", {
+      timeout: 20000,
+      matchCase: false,
+    }).should("be.visible");
+  });
+
+  cy.wait(4000);
 });
 
 
@@ -142,18 +188,69 @@ When("I perform Xero login", () => {
   cy.wait(5000);
 });
 
-  When("I perform Quickbooks login", () => {
-  // Add delays to appear more human-like and avoid rate limiting
-  cy.wait(2000);
-  cy.get('input#iux-identifier-first-international-email-user-id-input', { timeout: 15000 }).type('automationtesting077@gmail.com', { delay: 100 });
-  cy.wait(1000);
-  cy.contains('button', 'Sign in', { timeout: 15000 }).click();
-  cy.wait(10000);
-  cy.get('input#iux-password-confirmation-password').type('Test123@', { delay: 100 });
-  cy.wait(1000);
-  cy.contains('button', 'Continue', { timeout: 15000 }).click();
-  // Wait for navigation to complete
-  cy.wait(25000);
+When("I perform Quickbooks login", () => {
+  cy.origin(INTUIT_ORIGIN, () => {
+    cy.log("Selecting saved QuickBooks account");
+    cy.get('div[data-testid="AccountChoiceIdentifier_0"]', {
+      timeout: 20000,
+    })
+      .should("be.visible")
+      .click({ force: true });
+
+    cy.log("Verifying password verification header");
+    cy.get("h1#passwordVerificationHeader", { timeout: 20000 }).should(
+      "be.visible"
+    );
+
+    cy.log("Entering saved QuickBooks password");
+    cy.get('input[data-testid="currentPasswordInput"]', { timeout: 20000 })
+      .should("be.visible")
+      .clear()
+      .type("iZmY4gm:M.aR!B8", { log: false });
+
+    cy.log("Continuing with password verification");
+    cy.get('button[data-testid="passwordVerificationContinueButton"]', {
+      timeout: 20000,
+    })
+      .should("be.enabled")
+      .click({ force: true });
+  });
+
+});
+
+When("I select firm on Quickbook", () => {
+  cy.origin("https://appcenter.intuit.com", () => {
+    cy.contains("div", "Please select your company", {
+      timeout: 25000,
+      matchCase: false,
+    }).should("be.visible");
+
+    cy.get('input[data-testid="__textField"]', { timeout: 20000 })
+      .should("be.visible")
+      .click({ force: true });
+
+    cy.get("#idsDropdownTypeahead1-item-0", { timeout: 20000 })
+      .should("be.visible")
+      .click({ force: true });
+
+    cy.get("button.btn-next", { timeout: 20000 })
+      .should("be.enabled")
+      .click({ force: true });
+
+    cy.contains("span", "Connect", {
+      timeout: 20000,
+      matchCase: false,
+    })
+      .parents("button")
+      .should("be.enabled")
+      .click({ force: true });
+  });
+});
+
+Then("I should see Quickbook Connected", () => {
+  cy.get('dx-button[aria-label="Disconnect"] .dx-button-text', {
+    timeout: 25000,
+  }).should("be.visible");
 });
 
 
@@ -275,4 +372,39 @@ Then("I should see Xero connect button", () => {
   cy.log('Verifying Xero connect button');
   cy.xpath("//img[@alt='XERO']/ancestor::div[contains(@class,'group')]//div[contains(@class,'erp-xero-btn')]")
     .should('be.visible');
+});
+
+When("I click Disconnect to Quickbooks button on ERP screen", () => {
+  cy.contains("span", "Disconnect", { timeout: 15000, matchCase: false })
+    .should("be.visible")
+    .click({ force: true });
+});
+
+Then("i Should see Disconnect confirmation modal", () => {
+  cy.contains("label", "Are you sure you want to disconnect?", {
+    timeout: 15000,
+    matchCase: false,
+  }).should("be.visible");
+});
+
+When("I click on Confirm button on modal", () => {
+  cy.contains("span", "Confirm", { timeout: 15000, matchCase: false })
+    .should("be.visible")
+    .click({ force: true });
+});
+
+When("I click on Confirm button on diconnect modal", () => {
+  cy.contains("span", "Confirm", { timeout: 15000, matchCase: false })
+    .should("be.visible")
+    .click({ force: true });
+});
+
+Then("I should see Success message", () => {
+  cy.contains("label", "SUCCESS", { timeout: 15000, matchCase: false }).should(
+    "be.visible"
+  );
+});
+
+Then("I should see Quickbook disconnect button", () => {
+  cy.get("div.erp-quickbooks-btn", { timeout: 20000 }).should("be.visible");
 });

@@ -126,6 +126,7 @@ import { addCucumberPreprocessorPlugin } from "@badeball/cypress-cucumber-prepro
 import { createEsbuildPlugin } from "@badeball/cypress-cucumber-preprocessor/esbuild";
 import allureWriter from '@shelex/cypress-allure-plugin/writer';
 import { getLatestOtp } from "./gmail.js";
+import { sendSlackNotification } from "./slack-webhook.js";
 
 export default defineConfig({
   e2e: {
@@ -388,6 +389,12 @@ export default defineConfig({
           console.error("🔧 You can manually generate the report by running:");
           console.error("   cmd /c allure-report-generator.bat");
           console.error("\n========================================\n");
+        }
+
+        // Send Slack notification
+        const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+        if (webhookUrl) {
+          await sendSlackNotification(results, webhookUrl);
         }
       });
 

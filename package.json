@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "npm run allure:clean && npx cypress run --e2e --env allure=true",
+    "test:slack": "npx cypress run",
     "mcp": "node ./cypress-mcp.js",
+    "manual-login": "tsx manual-login.ts",
+    "playwright:test": "npx playwright test",
     "allure:generate": "allure-report-generator.bat",
     "allure:open": "allure-report-generator.bat",
     "allure:clean": "rimraf allure-results allure-report"
@@ -17,21 +20,28 @@
   "devDependencies": {
     "@badeball/cypress-cucumber-preprocessor": "^22.2.0",
     "@bahmutov/cypress-esbuild-preprocessor": "^2.2.5",
+    "@playwright/test": "^1.56.1",
     "@shelex/cypress-allure-plugin": "^2.41.2",
     "@slack/web-api": "^7.9.3",
     "allure-commandline": "^2.34.1",
     "allure-js-commons": "^2.1.0",
     "cypress": "^14.5.4",
     "cypress-file-upload": "^5.0.8",
+    "cypress-slack-reporter": "^1.5.4",
     "cypress-xpath": "^2.0.1",
     "dotenv": "^17.2.3",
     "esbuild": "^0.25.5",
-    "rimraf": "^5.0.7"
+    "mochawesome": "^7.1.4",
+    "mochawesome-merge": "^5.0.0",
+    "mochawesome-report-generator": "^6.3.2",
+    "rimraf": "^5.0.7",
+    "tsx": "^4.20.6"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.19.1",
     "googleapis": "^160.0.0",
     "html-to-text": "^9.0.5",
+    "node-fetch": "^3.3.2",
     "open": "^10.2.0",
     "zod": "^4.1.12"
   }

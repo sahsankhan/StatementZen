@@ -5,7 +5,7 @@ class LoginPage {
   }
   
   enterEmail(useremail) {
-    cy.get('input[placeholder="Enter your username or e-mail"]', { timeout: 20000 }).should('be.visible').clear({ force: true }).type(useremail, { force: true });
+    cy.get('input[placeholder="Enter your e-mail"]', { timeout: 20000 }).should('be.visible').clear({ force: true }).type(useremail, { force: true });
   }
 
   getHeadingByText(text) {

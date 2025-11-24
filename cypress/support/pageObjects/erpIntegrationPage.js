@@ -24,12 +24,9 @@ class ERPIntegrationPage {
 
   // Settings button on left sidebar
   getSettingsButton() {
-    return cy.xpath("//button[contains(@class, 'settings') or normalize-space(.)='Settings']");
-  }
-
-  // Alternative: Search for settings link/button
-  getSettingsLink() {
-    return cy.contains('Settings', { matchCase: false });
+    return cy.xpath(
+      "//div[contains(@class,'dx-treeview-item-content')][.//span[normalize-space()='ERP Integration']]"
+    );
   }
 
   // ERP Integration screen heading
