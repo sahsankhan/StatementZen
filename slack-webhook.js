@@ -1,8 +1,3 @@
-export async function sendSlackNotification(results, webhookUrl) {
-  console.log(
-    "Slack notification skipped. Provide webhookUrl to enable notifications."
-  );
-}
 import fetch from 'node-fetch';
 
 /**
