@@ -27,7 +27,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 4. Run Cypress feature tests
+      # 4. Ensure Cypress binary is installed
+      - name: Install Cypress
+        run: npm install cypress --save-dev
+
+      # 5. Run Cypress feature tests
       - name: Run Cypress tests
         env:
           GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}

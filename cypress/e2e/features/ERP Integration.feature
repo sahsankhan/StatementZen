@@ -46,7 +46,7 @@ Feature: ERP Integration Feature
     And I select firm on Quickbook
     Then I should see Quickbook Connected
 
-  Scenario: Complete ERP Integration Flow - Statement Zen and Quickbooks Connection
+  Scenario: Complete ERP Integration Flow - Disconnect Quickbooks form Statement Zen
     Given I am on the login page
     And I enters email "automationtesting077@gmail.com"
     And I click on "Send One Time Code" button
