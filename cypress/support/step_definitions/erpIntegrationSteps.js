@@ -135,7 +135,7 @@ Then("I should see {string} screen", (screenText) => {
   cy.contains(screenText, { timeout: 15000, matchCase: false }).should('be.visible');
 });
 
-When("I click on Settings button on the left sidebar", () => {
+When("I click on ERP Integration button on the left sidebar", () => {
   erpPage
     .getSettingsButton()
     .should("be.visible")

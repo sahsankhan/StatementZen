@@ -1,17 +1,20 @@
 Feature: ERP Integration Feature
 
-  # Scenario: Complete ERP Integration Flow - Login and Xero Connection
-  #   Given I am on the login page
-  #   And I enters email "automationtesting077@gmail.com"
-  #   And I click on "Send One Time Code" button
-  #   And I enter OTP code
-  #   And I click on "Verify One Time Code" button
-  #   Then I should see "My Account" heading
-  #   When I click on "LAUNCH STATEMENT ZEN APP" button on Dashboard
-  #   Then I should see "Highlight" screen
-  #   When I click on Settings button on the left sidebar
-  #   Then I should see "ERP Integration" screen
-  #   When I click Connect to Xero button on ERP screen
+  Scenario: Complete ERP Integration Flow - Login and Xero Connection
+    Given I am on the login page
+    And I enters email "automationtesting077@gmail.com"
+    And I click on "Send One Time Code" button
+    And I enter OTP code
+    And I click on "Verify One Time Code" button
+    Then I should see "My Account" heading
+    When I click on "LAUNCH STATEMENT ZEN APP" button on Dashboard
+    Then I should see "Highlight" screen
+    When I click on ERP Integration button on the left sidebar
+    Then I should see "ERP Integration" screen
+    And I click Connect to Xero button on ERP screen
+
+
+
   #   And I perform Xero login
   #   And I click on Not now button
   #   Then I should see "StatementZen wants access" screen
@@ -39,7 +42,7 @@ Feature: ERP Integration Feature
     Then I should see "My Account" heading
     When I click on "LAUNCH STATEMENT ZEN APP" button on Dashboard
     Then I should see "Highlight" screen
-    When I click on Settings button on the left sidebar
+    When I click on ERP Integration button on the left sidebar
     Then I should see "ERP Integration" screen
     When I click Connect to Quickbooks button on ERP screen
     And I perform Quickbooks login
@@ -55,7 +58,7 @@ Feature: ERP Integration Feature
     Then I should see "My Account" heading
     When I click on "LAUNCH STATEMENT ZEN APP" button on Dashboard
     Then I should see "Highlight" screen
-    When I click on Settings button on the left sidebar
+    When I click on ERP Integration button on the left sidebar
     Then I should see "ERP Integration" screen
     When I click Disconnect to Quickbooks button on ERP screen
     Then i Should see Disconnect confirmation modal
